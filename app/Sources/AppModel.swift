@@ -30,13 +30,45 @@ final class AppModel {
             UserDefaults.standard.set(discordPresenceLevel.rawValue,forKey:"discordPresenceLevel")
             discordPresence.update(level:discordPresenceLevel,texts:Self.presenceTexts())
             checkPresence()
+            // Full chosen while the game runs: the profile, if it's time to look (CareerProfile keeps the pace).
+            if discordPresenceLevel == .full && presencePid != nil { lookUpCareer() }
+        }
+    }
+    /// Full: the player's BattleTag ("Name#1234"), typed once in Settings › General › Discord (Battle.net
+    /// keeps it in no file Recall could read). OverFast gets it, and nothing else (CareerProfile.swift).
+    var battleTag=UserDefaults.standard.string(forKey:"battleTag") ?? ""
+    /// What the last lookup found, for Settings' line under the BattleTag.
+    var careerStatus=CareerProfile.Status.none
+    @ObservationIgnored private let career=CareerProfile()
+    /// Settings: a BattleTag entered (Return, or the field left). It is kept and looked up once; an
+    /// empty one forgets the profile and takes the rank off the card.
+    func commitBattleTag(_ text:String) {
+        let tag=text.trimmingCharacters(in:.whitespaces)
+        guard tag != battleTag else { return }
+        battleTag=tag;UserDefaults.standard.set(tag,forKey:"battleTag")
+        career.forget();careerStatus = .none
+        discordPresence.update(career:nil)
+        lookUpCareer()
+    }
+    /// Full: the profile is looked up as the game opens and when a BattleTag is entered. CareerProfile
+    /// keeps its own pace (one lookup in ten minutes, and any wait OverFast asked for), so calling this
+    /// more often sends nothing more.
+    private func lookUpCareer() {
+        guard discordPresenceLevel == .full,!battleTag.isEmpty,presenceAllowed else { return }
+        careerStatus = .looking
+        career.lookUp(tag:battleTag) { [weak self] status,card in
+            Task { @MainActor in
+                guard let self else { return }
+                self.careerStatus=status
+                self.discordPresence.update(career:card.map(CareerLines.init))
+            }
         }
     }
     nonisolated private static var storedPresenceLevel:DiscordPresenceLevel {
         DiscordPresenceLevel(rawValue:UserDefaults.standard.string(forKey:"discordPresenceLevel") ?? "") ?? .standard
     }
     nonisolated private static func presenceTexts()->PresenceTexts {
-        PresenceTexts(menu:L("In Menus"),match:L("In Match"),voice:L("In Group Voice"),badge:L("Playing on Mac with {0}",Brand.name))
+        PresenceTexts(menu:L("In Menus"),match:L("In Match"),voice:L("In Group Voice"),badge:L("Playing on Mac with {0}",Brand.name).replacingOccurrences(of:"Mac",with:"\u{F8FF}Mac"))
     }
     /// Overwatch's own app, which macOS shows as running while the game does (game_mode_app.py).
     nonisolated static let gameBundleID="org.overwatch2mac.overwatch"
@@ -76,6 +108,8 @@ final class AppModel {
         exit.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.presenceGameEnded(game) } }
         exit.resume();presenceExit=exit
         discordPresence.begin(logURL:OverwatchLogTail.logURL(root:root),launched:DiscordPresence.startTime(of:game) ?? NSRunningApplication(processIdentifier:game)?.launchDate)
+        // The game opening is when the profile tells the session before this one.
+        lookUpCareer()
         // A process that ended before the watch was set up never reports.
         if kill(game,0) != 0 && errno == ESRCH { presenceGameEnded(game) }
     }
@@ -625,6 +659,8 @@ final class AppModel {
         // never posts "launched" for the game (Wine starts it, not the Finder), but it does change its list
         // of running apps, with the game's own app in it (checked October 25). A game already running is
         // found once the status is read (refresh), when the region is known.
+        // The matches the log saw in each run of the game, toward the next session the profile tells (Full).
+        discordPresence.sessionEnded={ [career] in career.sessionEnded(matches:$0) }
         runningObservation=NSWorkspace.shared.observe(\.runningApplications) { [weak self] _,_ in
             Task { @MainActor in self?.runningAppsChanged() }
         }
@@ -1517,8 +1553,10 @@ final class AppModel {
         let fresh=loadChecked.map { Date().timeIntervalSince($0) < 15 } ?? false
         let otherApps:[String:Any]=["at_last_launch":launchLoad ?? "none","now":fresh ? macLoad.report as Any : "not_checked"]
         // Schema 6 (1.6.0): discord_presence, the level, whether Discord answered and whether it took the last card (DiscordPresence.swift).
-        let discord:[String:Any]=["level":discordPresenceLevel.rawValue,"allowed":presenceAllowed,"connected":discordPresence.connected,"accepted":discordPresence.accepted]
-        let data:[String:Any]=["schema":6,"discord_presence":discord,"game_mode":gameMode ? "on" : "off",
+        // Schema 7 (1.6.0): its career_profile (Full), whether a BattleTag is set and OverFast's last answer, never the tag.
+        let profile:[String:Any]=["battletag_set":!battleTag.isEmpty,"last_code":career.lastCode.map { $0 as Any } ?? "none"]
+        let discord:[String:Any]=["level":discordPresenceLevel.rawValue,"allowed":presenceAllowed,"connected":discordPresence.connected,"accepted":discordPresence.accepted,"career_profile":profile]
+        let data:[String:Any]=["schema":7,"discord_presence":discord,"game_mode":gameMode ? "on" : "off",
                                 "mouse_input":mouseInput.rawValue,"input_monitoring":InputMonitoring.access.rawValue,
                                 "other_apps":otherApps,"logging":logs,"battlenet":battleNet,"app_language":AppLanguage.current,"default_browser":browser,"main_display":display,"app_version":release?.appVersion ?? "unknown","runtime_version":state["active_runtime"] as? String ?? "not_installed","macos":ProcessInfo.processInfo.operatingSystemVersionString,"memory_gib":ProcessInfo.processInfo.physicalMemory>>30,"architecture":"arm64","free_gib":freeBytes>>30,"game_installed":gameInstalled,"display_resolution":"\(resolution.width)x\(resolution.height)","metalfx_upscaling":metalFXUpscaling ? "on" : "off","metalfx_sharpening":metalFXSharpening.rawValue,"install_location":InstallLocation.isStandard(root) ? "default" : (InstallLocation.isInternal(root) ? "other_internal" : "external"),"recent_stages":lastEvents,"last_error":failure.reportCode,"shaders":ShaderRecord.read(root:root),"shader_memory":shaderMemory]
         report=String(data:(try? JSONSerialization.data(withJSONObject:data,options:[.prettyPrinted,.sortedKeys])) ?? Data(),encoding:.utf8) ?? ""

@@ -40,6 +40,9 @@ struct SettingsSheet:View {
     /// Logging: the setting waiting for the FPS warning's Turn On, and Custom's text being typed.
     @State private var confirmLogging:LoggingSetting?
     @State private var customDraft:String?
+    /// The BattleTag as typed (Full), kept once Return is pressed or the field is left.
+    @State private var tagDraft:String?
+    @FocusState private var tagFocused:Bool
     /// Shader memory's slider: how many of the shader cache's parts Overwatch loads.
     @State private var shaderParts=1.0
     /// Follows System Settings: the main display can change while Settings is open.
@@ -279,9 +282,50 @@ struct SettingsSheet:View {
                     LauncherSegmented(options:DiscordPresenceLevel.allCases,selection:$model.discordPresenceLevel,title:\.title)
                 }
                 Text(model.discordPresenceLevel.detail).font(LauncherStyle.font(12)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                if model.discordPresenceLevel == .full { careerProfile }
                 Text(L("To hide it, turn off activity sharing in Discord: User Settings › Activity Privacy.")).font(LauncherStyle.font(12))
                     .foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
             }
+        }
+    }
+    /// Full: the BattleTag, what the last lookup found, and where the BattleTag goes (CareerProfile.swift).
+    private var careerProfile:some View {
+        VStack(alignment:.leading,spacing:6) {
+            HStack(spacing:8) {
+                Text(L("BattleTag")).font(LauncherStyle.font(13,.medium))
+                TextField(L("BattleTag"),text:Binding(get:{ tagDraft ?? model.battleTag },set:{ tagDraft=$0 }),prompt:Text(verbatim:"Name#1234"))
+                    .textFieldStyle(.roundedBorder).frame(maxWidth:200).focused($tagFocused).accessibilityLabel(L("BattleTag"))
+                    .onSubmit(commitTag).onChange(of:tagFocused) { _,focused in if !focused { commitTag() } }
+                    // Done closes Settings with the field still in focus: what was typed is kept then too.
+                    .onDisappear(perform:commitTag)
+            }
+            if let line=careerLine {
+                Text(line.text).font(LauncherStyle.font(12)).foregroundStyle(line.problem ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                    .fixedSize(horizontal:false,vertical:true)
+            }
+            Text(L("Recall asks OverFast (overfast-api.tekrop.fr), an open-source service that reads public career profiles, for yours as Overwatch opens. Only your BattleTag is sent, and OverFast keeps the profiles it looks up."))
+                .font(LauncherStyle.font(12)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+        }.padding(.top,2)
+    }
+    private func commitTag() {
+        guard let draft=tagDraft else { return }
+        tagDraft=nil;model.commitBattleTag(draft)
+    }
+    /// The line under the BattleTag: what the last lookup found, or what to do.
+    private var careerLine:(text:String,problem:Bool)? {
+        if (tagDraft ?? model.battleTag).trimmingCharacters(in:.whitespaces).isEmpty {
+            return (L("Enter your BattleTag to show your rank. Your career profile must be public."),false)
+        }
+        switch model.careerStatus {
+        case .none: return nil
+        case .looking: return (L("Looking up your career profile…"),false)
+        case .found(let rank?): return (L("Found your profile: {0}.",rank.label()),false)
+        case .found(nil): return (L("Found your profile. It shows no competitive rank this season."),false)
+        case .notPublic(let until):
+            return (L("Your career profile isn’t public, or OverFast hasn’t seen it yet. In Overwatch: Options › Social › Career Profile Visibility › Public, then quit Overwatch. Recall looks again after {0}.",
+                      until.formatted(date:.omitted,time:.shortened)),true)
+        case .invalidTag: return (L("That isn’t a BattleTag. Use the form Name#1234."),true)
+        case .unavailable: return (L("OverFast didn’t answer. Recall looks again the next time Overwatch opens."),false)
         }
     }
     /// Overwatch's own Video settings are where players usually change resolution; Recall

@@ -293,6 +293,23 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         precondition(early.state(at:after(200)) == .unknown)
         early.apply(.switching(byPlayer:false,after(300)));early.apply(.channel(nil,after(300)));early.apply(.channel(.party,after(302)))
         precondition(early.state(at:after(400)) == .unknown && !early.chosen)
+        // Matches this run of the game, each once: a backed-out load and the Practice Range are none, a voice
+        // switch mid-match is the same match, and a whole log read at once counts them all.
+        var count=PresenceTracker()
+        count.apply(.voiceReady(after(10)))
+        count.apply(.channel(.team,after(20)));count.apply(.channel(nil,after(24)))
+        precondition(count.matches(at:after(30)) == 0)
+        count.apply(mate(after(99)));count.apply(.channel(.team,after(100)))
+        precondition(count.matches(at:after(105)) == 0 && count.matches(at:after(111)) == 1,"the match going on counts once it holds")
+        count.apply(.switching(byPlayer:true,after(300)));count.apply(.channel(nil,after(300)));count.apply(.channel(.party,after(302)))
+        count.apply(.matchOver(after(700)));count.apply(.channel(nil,after(720)))
+        precondition(count.matches(at:after(721)) == 1)
+        count.apply(.channel(.team,after(800)));count.apply(.channel(nil,after(900)))
+        precondition(count.matches(at:after(901)) == 1,"a team channel with nobody else in it is no match")
+        count.apply(mate(after(999)));count.apply(.channel(.team,after(1000)));count.apply(.channel(nil,after(1600)))
+        precondition(count.matches(at:after(1601)) == 2 && count.played == 2)
+        count.apply(.reset)
+        precondition(count.matches(at:after(1700)) == 0,"the game opening again starts the count over")
         // A channel nobody has seen is not guessed at.
         tracker.apply(.channel(.other,after(2500)))
         precondition(tracker.state(at:after(2501)) == .unknown)
@@ -318,27 +335,27 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         func start(_ card:[String:Any])->Int? { (card["timestamps"] as? [String:Int])?["start"] }
         // Normal is what a PC player gets, whatever the log says: the game, and the time since it opened.
         for state in [PresenceState.unknown,.menu,.match(since:since)] {
-            let card=PresenceCard.activity(state:state,voice:GroupVoice(count:3,channel:"773141270",party:"a1b2"),level:.normal,launched:launched,texts:texts)
+            let card=PresenceCard.activity(facts:PresenceFacts(place:state,voice:GroupVoice(count:3,channel:"773141270",party:"a1b2")),level:.normal,launched:launched,texts:texts)
             precondition(card["type"] as? Int == 0 && start(card) == 1_792_000_000 && card["details"] == nil && card["assets"] == nil && card["party"] == nil && card["state"] == nil)
         }
-        let unknown=PresenceCard.activity(state:.unknown,level:.live,launched:launched,texts:texts)
+        let unknown=PresenceCard.activity(facts:PresenceFacts(place:.unknown),level:.live,launched:launched,texts:texts)
         precondition(unknown["details"] == nil && start(unknown) == 1_792_000_000)
-        let menu=PresenceCard.activity(state:.menu,level:.live,launched:launched,texts:texts)
+        let menu=PresenceCard.activity(facts:PresenceFacts(place:.menu),level:.live,launched:launched,texts:texts)
         precondition(menu["details"] as? String == "In Menus" && start(menu) == 1_792_000_000)
-        let match=PresenceCard.activity(state:.match(since:since),level:.live,launched:launched,texts:texts)
+        let match=PresenceCard.activity(facts:PresenceFacts(place:.match(since:since)),level:.live,launched:launched,texts:texts)
         precondition(match["details"] as? String == "In Match" && start(match) == 1_792_000_600)
         precondition(menu["state"] == nil && menu["party"] == nil)
         // In the group's voice chat: Discord shows "In Group Voice (3 of 6)" under where the player is (nothing,
         // when the log cannot say). The party's size is the voice chat's, which the line names.
-        let group=PresenceCard.activity(state:.unknown,voice:GroupVoice(count:3,channel:"773141270",party:"a1b2"),level:.live,launched:launched,texts:texts)
+        let group=PresenceCard.activity(facts:PresenceFacts(place:.unknown,voice:GroupVoice(count:3,channel:"773141270",party:"a1b2")),level:.live,launched:launched,texts:texts)
         let party=group["party"] as? [String:Any],id=party?["id"] as? String
         precondition(group["details"] == nil && group["state"] as? String == "In Group Voice" && party?["size"] as? [Int] == [3,6])
-        let voiced=PresenceCard.activity(state:.match(since:since),voice:GroupVoice(count:3,channel:"773141270",party:"a1b2"),level:.live,launched:launched,texts:texts)
+        let voiced=PresenceCard.activity(facts:PresenceFacts(place:.match(since:since),voice:GroupVoice(count:3,channel:"773141270",party:"a1b2")),level:.live,launched:launched,texts:texts)
         precondition(voiced["details"] as? String == "In Match" && voiced["state"] as? String == "In Group Voice" && start(voiced) == 1_792_000_600)
         precondition(id == "a1b2")
         precondition(JSONSerialization.isValidJSONObject(voiced))
         // Never more than six of six.
-        let crowded=PresenceCard.activity(state:.menu,voice:GroupVoice(count:8,channel:"x",party:"c3"),level:.live,launched:launched,texts:texts)
+        let crowded=PresenceCard.activity(facts:PresenceFacts(place:.menu,voice:GroupVoice(count:8,channel:"x",party:"c3")),level:.live,launched:launched,texts:texts)
         precondition((crowded["party"] as? [String:Any])?["size"] as? [Int] == [6,6])
         // The Recall badge, loaded from the repository's icon, on every Live card.
         for card in [unknown,menu,group,match] {
@@ -349,7 +366,7 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         precondition(JSONSerialization.isValidJSONObject(match))
         // Discord wants two characters at least in a line, and no more than 128.
         precondition((2...128).contains((menu["details"] as! String).count) && (2...128).contains((match["details"] as! String).count) && (2...128).contains((group["state"] as! String).count))
-        precondition(DiscordPresenceLevel.allCases == [.normal,.live] && DiscordPresenceLevel(rawValue:"gone") == nil && DiscordPresenceLevel.standard == .live)
+        precondition(DiscordPresenceLevel.allCases == [.normal,.live,.full] && DiscordPresenceLevel(rawValue:"gone") == nil && DiscordPresenceLevel.standard == .live)
     }
 
     static func socketPlaces() {

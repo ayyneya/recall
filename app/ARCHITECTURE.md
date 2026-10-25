@@ -261,6 +261,9 @@ runtime/phase-3/display-options-tests   # from the repository root
 swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Localization.swift app/Sources/Brand.swift \
   app/Sources/DiscordPresence.swift tests/DiscordPresenceTests.swift -o runtime/phase-3/discord-presence-tests
 runtime/phase-3/discord-presence-tests
+swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Brand.swift app/Sources/Localization.swift \
+  app/Sources/DiscordPresence.swift app/Sources/CareerProfile.swift tests/CareerProfileTests.swift -o runtime/phase-3/career-profile-tests
+runtime/phase-3/career-profile-tests
 ```
 
 Native process execution: `scripts/portable_setup.m`, with scoped session and
@@ -402,6 +405,44 @@ for that first read, when the region is known. The support report names the leve
 answered and whether it took the last card (Discord answers each one; schema 6).
 `tests/DiscordPresenceTests.swift` covers the socket protocol, the log lines, the tracking and the
 whole path against a fake Discord.
+
+Full, the third level (`CareerProfile.swift`), adds the public career profile, through OverFast (an
+open-source service that reads career profiles; Recall never reads Blizzard's pages itself). The player
+types their BattleTag once (Battle.net keeps it in no file), and it is checked locally before it is sent
+as OverFast takes it (`Name-1234`). Blizzard updates a profile only after the player quits the game, so
+the card tells the session before this one: as the game opens Recall asks for the profile's summary
+(its time, ranks, season, name, title, endorsement and icon) and, when the time changed, the whole
+profile (about half a megabyte: each mode's career totals, records and heroes' time), plus OverFast's
+hero list (names, portraits, roles) once a week. The difference from the totals it kept is the last
+session: Competitive and Quick Play games won and lost, the hero played longest (and, for the rank
+shown, the role of Competitive's), eliminations, deaths, healing and damage, a "best in a game" record
+beaten, and a rank that moved (in the same season). The log adds what the profile can't: each run of
+the game reports its matches (`PresenceTracker.matches`, each counted once as a line shows it held), and
+the matches since the totals were taken, less the profile's, are the ones in other modes (Arcade, custom
+games); a session the log wasn't read in makes that unknown until the next totals. It asks at most once
+in ten minutes (OverFast's cache time), as the game opens and once when a BattleTag is entered, never
+again before a wait OverFast gave (its not-found `next_check_at`, about 90 minutes, or a 429/503's
+Retry-After), and a 500 or no answer waits for the next opening.
+On the card, line 2 holds one thing, the first there is: the group's voice ("In Group Voice (2 of 6)");
+in the menus at Full, a rank that moved ("⬆️ Tank: up to Emerald 1"), then a record beaten ("🏅 New best: 46 eliminations
+in a game"), then the session ("🎮 Comp 2–1 · QP 1–0 · 1 other", short because Discord cuts the line at
+about 30 characters). At Full line 1 starts with the player's name in the game ("pyxee · In Menus"). In
+the menus the rank (the last session's competitive role, or the best) takes the badge's place, with this
+season's ranks in its hover text on one line, since Discord drops line breaks there ("🛡️ Tank: Emerald 1 ·
+👥 6v6: Emerald 1 · Playing on Mac with Recall", the career page's fourth row being 6v6), and the large
+picture is the hero played longest in the last session, with the session's totals on all heroes ("Most
+played last session: Ana · All heroes: 38 eliminations, 9 deaths, 14,032 healing"), or the player's icon
+with their name and title. None of the profile shows in a match, where the log can't tell Competitive from
+Quick Play or Arcade (a rank there would read as Competitive, a hero's picture as the hero being played);
+a "Career Profile" button to the player's career page shows throughout (others see Discord's buttons).
+The card is made from `PresenceFacts` alone (where the player is, the group's voice, the match's number,
+the profile, and whether the match is competitive, which nothing can tell yet), so another source, such
+as reading the screen behind its own switch, adds facts there: a known competitive match puts the rank
+on it. The support report (schema 7)
+says whether a BattleTag is set and OverFast's last answer code, never the tag.
+`tests/CareerProfileTests.swift` covers the BattleTag, OverFast's answers, the last session with the
+log's match count, every lookup rule against a fake OverFast that counts requests, and the card's lines
+and pictures in each place.
 
 The running screen learns the session's processes from `ow2-setup session` (when the window
 becomes active, or from Settings) and asks macOS to report when each one ends (a process
