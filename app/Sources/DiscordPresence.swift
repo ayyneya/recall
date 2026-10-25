@@ -259,10 +259,13 @@ final class DiscordIPC {
 
     init(applicationID:String=Brand.discordApplicationID,paths:[String]?=nil,pid:Int32=getpid(),spacing:TimeInterval=0.5,burst:Int=5,window:TimeInterval=20,retry:TimeInterval=30) {
         self.applicationID=applicationID;self.pid=pid;self.spacing=spacing;self.burst=burst;self.window=window;self.retryDelay=retry
-        if let paths { self.paths=paths } else {
-            let folder=ProcessInfo.processInfo.environment["TMPDIR"] ?? "/tmp/"
-            self.paths=[folder.hasSuffix("/") ? folder : folder+"/","/tmp/"].flatMap { base in (0..<10).map { base+"discord-ipc-\($0)" } }
-        }
+        self.paths=paths ?? Self.defaultPaths()
+    }
+    /// Where Discord's sockets are on a Mac: this user's own temporary folder, which no other account can
+    /// write to. Not /tmp, where anyone could plant a socket for Recall to talk to.
+    static func defaultPaths()->[String] {
+        let folder=NSTemporaryDirectory()
+        return (0..<10).map { (folder.hasSuffix("/") ? folder : folder+"/")+"discord-ipc-\($0)" }
     }
     /// Shows the card, or takes it down with nil. Until Discord is there it waits.
     func set(_ activity:[String:Any]?) {
@@ -313,6 +316,9 @@ final class DiscordIPC {
             withUnsafeMutablePointer(to:&address.sun_path) { $0.withMemoryRebound(to:CChar.self,capacity:capacity) { _ = strlcpy($0,path,capacity) } }
             let result=withUnsafePointer(to:&address) { $0.withMemoryRebound(to:sockaddr.self,capacity:1) { Darwin.connect(fd,$0,socklen_t(MemoryLayout<sockaddr_un>.size)) } }
             guard result == 0 else { close(fd);continue }
+            // Only a program of this user's own is Discord for this purpose.
+            var owner:uid_t=0,group:gid_t=0
+            guard getpeereid(fd,&owner,&group) == 0,owner == getuid() else { close(fd);continue }
             _ = fcntl(fd,F_SETFL,fcntl(fd,F_GETFL)|O_NONBLOCK)
             descriptor=fd;reader=DiscordFrameReader();ready=false
             let reading=DispatchSource.makeReadSource(fileDescriptor:fd,queue:queue)

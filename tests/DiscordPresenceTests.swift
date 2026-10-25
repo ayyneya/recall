@@ -98,7 +98,7 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
 
 @main struct DiscordPresenceTests {
     static func main() {
-        frames();parsing();tracker();cards();processStart();location();tail();connection();reconnect();absent();rate();spam();endToEnd()
+        frames();parsing();tracker();cards();socketPlaces();processStart();location();tail();connection();reconnect();absent();rate();spam();endToEnd()
         print("PASS: Discord frames, Overwatch.log lines, match tracking, the card at each level, following the log, the Discord socket and the whole path")
     }
 
@@ -259,6 +259,12 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         // Discord wants two characters at least in a line, and no more than 128.
         precondition((2...128).contains((menu["details"] as! String).count) && (2...128).contains((match["details"] as! String).count) && (2...128).contains((group["details"] as! String).count))
         precondition(DiscordPresenceLevel.allCases == [.normal,.live] && DiscordPresenceLevel(rawValue:"gone") == nil && DiscordPresenceLevel.standard == .live)
+    }
+
+    static func socketPlaces() {
+        // Discord's sockets are searched for in this user's own temporary folder only.
+        let paths=DiscordIPC.defaultPaths()
+        precondition(paths.count == 10 && paths.allSatisfy { $0.hasPrefix(NSTemporaryDirectory()) && !$0.hasPrefix("/tmp/") && $0.hasSuffix("discord-ipc-\(paths.firstIndex(of:$0)!)") })
     }
 
     static func processStart() {
