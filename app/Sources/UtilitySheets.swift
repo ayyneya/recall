@@ -120,6 +120,7 @@ struct SettingsSheet:View {
             battleNet
             mouse
             if model.otherInstallation != nil { otherInstallation }
+            if model.showsDiscord { discord }
         case .display:
             display
             resetDisplay
@@ -260,6 +261,26 @@ struct SettingsSheet:View {
                         .disabled(model.busy || model.uninstall == .working || model.running != nil)
                 }
                 if let running=model.running { closeFirst(running,several:false) }
+            }
+        }
+    }
+    /// What Discord shows while Overwatch runs (DiscordPresence.swift). Always on: the player's own
+    /// Discord decides whether anyone sees it, so there is only how much it says.
+    private var discord:some View {
+        LauncherPanel(inset:16) {
+            VStack(alignment:.leading,spacing:10) {
+                HStack(alignment:.center,spacing:12) {
+                    VStack(alignment:.leading,spacing:2) {
+                        Text(L("Discord")).font(LauncherStyle.font(14,.semibold))
+                        Text(L("What your profile shows while you play Overwatch.")).font(LauncherStyle.font(12))
+                            .foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                    }
+                    Spacer(minLength:12)
+                    LauncherSegmented(options:DiscordPresenceLevel.allCases,selection:$model.discordPresenceLevel,title:\.title)
+                }
+                Text(model.discordPresenceLevel.detail).font(LauncherStyle.font(12)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                Text(L("To hide it, turn off activity sharing in Discord: User Settings › Activity Privacy.")).font(LauncherStyle.font(12))
+                    .foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
             }
         }
     }

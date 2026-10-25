@@ -86,13 +86,16 @@ final class AppDelegate: NSObject { @objc func forceQuit() {} }
         }
         for (upscaling,sharpening,expected) in [("YES","off","on"),("YES","high","on"),("NO","off","off"),("NO","low","off")] {
             let fields=try report(upscaling,sharpening)
-            precondition(fields["schema"] as? Int == 5)
+            precondition(fields["schema"] as? Int == 6)
             // Game Mode (REC-51, REC-55): on unless the player turned it off.
             precondition(fields["game_mode"] as? String == "on","\(fields)")
             // The mouse (REC-52, REC-57): Standard unless the player chose another, with Input
             // Monitoring as macOS has it for this process.
             precondition(fields["mouse_input"] as? String == "standard","\(fields)")
             precondition(["allowed","denied","undecided"].contains(fields["input_monitoring"] as? String ?? ""),"\(fields)")
+            // Discord (DiscordPresence.swift, schema 6): Live unless the player chose otherwise, and no Discord talked to here.
+            let discord=fields["discord_presence"] as? [String:Any]
+            precondition(discord?["level"] as? String == "live" && discord?["connected"] as? Bool == false && discord?["allowed"] is Bool,"\(String(describing:discord))")
             // Other apps (REC-5): nothing launched from this copy, and its busy note never looked.
             let other=fields["other_apps"] as? [String:Any]
             precondition(other?["at_last_launch"] as? String == "none" && other?["now"] as? String == "not_checked","\(String(describing:other))")

@@ -172,6 +172,14 @@ request carries no account, identifier or information about your Mac; like any
 web request it reaches GitHub from your IP address. Turn it off in Settings › General,
 and check by hand from the Recall menu.
 
+Recall tells your Discord app that you are playing Overwatch, so your Discord profile can show
+it (Settings › General › Discord): the game and how long you have played and, at Live, whether you
+are in the menus, in a group or in a match (in a group, the game does not say which of the last two), with a small Recall badge. It goes only to the Discord app on your
+Mac, over the local connection Discord offers every app; Recall links no account and sends nothing
+to a server for it. What Recall reads for it is Overwatch's own log file on your Mac. Whether other
+people see it is up to Discord: turn off activity sharing in Discord (User Settings › Activity
+Privacy). It is not used with China's Battle.net.
+
 The Mosaic News links in the app open in your browser with a tag naming the
 screen they came from (for example `utm_content=home`), so the author can see
 which placement works. Nothing else is added, and the app itself records

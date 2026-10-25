@@ -258,6 +258,9 @@ swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Localizati
 swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Localization.swift app/Sources/DisplayOptions.swift \
   tests/DisplayOptionsTests.swift -o runtime/phase-3/display-options-tests
 runtime/phase-3/display-options-tests   # from the repository root
+swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Localization.swift app/Sources/Brand.swift \
+  app/Sources/DiscordPresence.swift tests/DiscordPresenceTests.swift -o runtime/phase-3/discord-presence-tests
+runtime/phase-3/discord-presence-tests
 ```
 
 Native process execution: `scripts/portable_setup.m`, with scoped session and
@@ -355,6 +358,37 @@ a check of real logs). `Summary.txt` is the timeline in the player's language; `
 matter, by file and line. Crash dumps never go in. The support report names the setting, and
 from schema 5 whether Game Mode is on.
 `tests/LogBundleTests.swift` and `tests/test_session_logs.py` cover them.
+
+Discord (`DiscordPresence.swift`; Settings › General) tells the player's Discord app what they are playing.
+Discord on a Mac finds games by their Mac executable, and Overwatch is listed only as the Windows
+`overwatch.exe`, so it never sees the game run under Wine. Recall connects to the local socket every
+Discord client listens on (`discord-ipc-0` to `-9` in the temporary folder; no account, no sign-in, no
+network) and sets one card under Blizzard's own Overwatch listing (`Brand.discordApplicationID`), which
+reads "Playing Overwatch" with Overwatch's icon and the time since the game opened, as it does for a PC
+player. The setting is a level, not a switch (games have none, and Discord's Activity Privacy hides
+the card): Normal is that card; Live, the default, adds In Menus or In Match, the match's own timer
+and a small Recall badge (the app icon, which Discord loads from the repository). The card follows
+the game: it goes up when macOS reports Overwatch's own app (`org.overwatch2mac.overwatch`,
+`scripts/game_mode_app.py`) opening, or when the running screen finds the game running, and comes
+down when it quits. Live follows Overwatch.log, a file the game keeps for itself, with a file-system
+event source (`OverwatchLogTail`; nothing polls): it reads what is there once, then only what is
+added. "Auto-Join Enabled Flags" leaving 0000 is the menus; the channel the game talks in
+("Notified Lobby of Active channel", `PresenceTracker`) says the rest: the team's is a match, counted
+once it has held ten seconds, because a match loading and backed out of opens it for two to seven,
+and once another player's voice is in it (`MemberAdded … false`; a team's arrive within a second or
+two, while the Practice Range and games with bots have none, and then nothing is claimed). The
+results ending it: the flags "Channel Enabled Flags 0005 -> 0007" (match-wide chat opening) come when a
+match is over, in every mode, seconds before the MATCH channel the game opens for the voting cards
+(Quick Play) or tens of seconds before the player leaves the team's channel (an Arcade game kept it
+52 seconds), and then the card goes back to In Menus. From the moment a group forms the game keeps only the group's (PARTY) channel and the log says
+nothing more about menus or matches (seen with a group of two, October 25), so the card says
+In a Group and claims nothing else. Nothing reads the game's memory, screen or network traffic.
+Without voice chat's Auto-Join the log says nothing about where the player is, and the card then
+only says that the game runs. China's Battle.net never starts it (Discord is
+blocked there). Support can turn it off: `defaults write org.overwatch2mac.launcher discordPresence
+-bool false`. The support report names the level and whether Discord took the card (schema 5).
+`tests/DiscordPresenceTests.swift` covers the socket protocol, the log lines, the tracking and the
+whole path against a fake Discord.
 
 The running screen learns the session's processes from `ow2-setup session` (when the window
 becomes active, or from Settings) and asks macOS to report when each one ends (a process

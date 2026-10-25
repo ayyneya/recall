@@ -21,6 +21,45 @@ final class AppModel {
     var autoOpenBattleNet=UserDefaults.standard.object(forKey:"autoOpenBattleNet") as? Bool ?? true {
         didSet { UserDefaults.standard.set(autoOpenBattleNet,forKey:"autoOpenBattleNet") }
     }
+    /// What Discord shows while Overwatch runs (DiscordPresence.swift): Normal is the game and a timer,
+    /// as for a PC player; Live adds menus or match and the Recall badge. There is no off switch:
+    /// games have none, and Discord's own Activity Privacy hides it. Support can turn it off:
+    ///   defaults write org.overwatch2mac.launcher discordPresence -bool false
+    var discordPresenceLevel=AppModel.storedPresenceLevel {
+        didSet {
+            UserDefaults.standard.set(discordPresenceLevel.rawValue,forKey:"discordPresenceLevel")
+            discordPresence.update(level:discordPresenceLevel,texts:Self.presenceTexts())
+        }
+    }
+    nonisolated private static var storedPresenceLevel:DiscordPresenceLevel {
+        DiscordPresenceLevel(rawValue:UserDefaults.standard.string(forKey:"discordPresenceLevel") ?? "") ?? .standard
+    }
+    nonisolated private static func presenceTexts()->PresenceTexts {
+        PresenceTexts(menu:L("In Menus"),match:L("In Match"),group:L("In a Group"),badge:L("Playing on Mac with {0}",Brand.name))
+    }
+    /// Overwatch's own app, which macOS shows as running while the game does (game_mode_app.py).
+    nonisolated static let gameBundleID="org.overwatch2mac.overwatch"
+    nonisolated static func runningGame()->pid_t? {
+        NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == gameBundleID }?.processIdentifier
+    }
+    @ObservationIgnored private let discordPresence=DiscordPresence(level:AppModel.storedPresenceLevel,texts:AppModel.presenceTexts())
+    /// Discord is blocked in mainland China, and previews never touch the real Discord.
+    private var presenceAllowed:Bool { (UserDefaults.standard.object(forKey:"discordPresence") as? Bool ?? true) && showsDiscord && !isPreview }
+    /// The game process the card was started for.
+    @ObservationIgnored private var presencePid:pid_t?
+    /// The list of running apps changed: the game's app is in it (the card goes up), or the game the card
+    /// was started for is gone (it comes down). Other apps coming and going change nothing.
+    private func runningAppsChanged() {
+        if let game=Self.runningGame() { syncPresence(game:game) }
+        else if let pid=presencePid,kill(pid,0) != 0 { syncPresence(game:nil) }
+    }
+    /// The card follows the game: it appears when Overwatch opens and comes down when it closes.
+    /// `game` is the game's process, nil when it isn't running.
+    private func syncPresence(game:pid_t?) {
+        guard let game,presenceAllowed else { presencePid=nil;discordPresence.end();return }
+        presencePid=game
+        discordPresence.begin(logURL:OverwatchLogTail.logURL(root:root),launched:DiscordPresence.startTime(of:game) ?? NSRunningApplication(processIdentifier:game)?.launchDate)
+    }
     /// Apple's Metal Performance HUD over Overwatch (worker: launch --metal-hud). Battle.net
     /// starts the game with its own environment, so Settings changes it only while
     /// Battle.net is closed (see running).
@@ -434,6 +473,7 @@ final class AppModel {
     var driveName: String { InstallLocation.driveName(root) }
     private var mountObserver: NSObjectProtocol?
     private var quitObserver: NSObjectProtocol?
+    private var runningObservation: NSKeyValueObservation?
     var title: String {
         switch screen {
         case .welcome: return Brand.name
@@ -550,6 +590,13 @@ final class AppModel {
             guard let pid=(note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier else { return }
             Task { @MainActor in self?.appEnded(pid) }
         }
+        // Overwatch opens or closes (Battle.net starts it, so Recall is not told otherwise): the card goes up or
+        // comes down. macOS never posts "launched" for the game (Wine starts it, not the Finder), but it does
+        // change its list of running apps, with the game's own app in it (checked October 25).
+        runningObservation=NSWorkspace.shared.observe(\.runningApplications) { [weak self] _,_ in
+            Task { @MainActor in self?.runningAppsChanged() }
+        }
+        runningAppsChanged()
         // Opened from the disk image: move to Applications before anything else.
         if AppLocation.needsMove(Bundle.main.bundleURL) { prepareMove();return }
         if automaticUpdates { checkForUpdates(manual:false) }
@@ -1184,12 +1231,13 @@ final class AppModel {
         }
     }
     private func showSession(_ processes:[[String:Any]]) {
-        guard !processes.isEmpty else { screen = .ready;gameWindowHidden=false;sessionLogging=nil;return }
+        guard !processes.isEmpty else { screen = .ready;gameWindowHidden=false;sessionLogging=nil;syncPresence(game:AppModel.runningGame());return }
         readSessionLogging()
         existingName=processes.contains { $0["kind"] as? String == "game" } ? "Overwatch" : "Battle.net"
         screen = .running
         watchExits(processes)
         let game=processes.first { $0["kind"] as? String == "game" }.flatMap { ($0["pid"] as? NSNumber)?.int32Value }
+        syncPresence(game:AppModel.runningGame() ?? game)
         guard let game else { gameWindowHidden=false;return }
         Task {
             let windows=await LaunchReadiness.visibleWindows()
@@ -1437,7 +1485,9 @@ final class AppModel {
         // and input_monitoring (REC-52, REC-57).
         let fresh=loadChecked.map { Date().timeIntervalSince($0) < 15 } ?? false
         let otherApps:[String:Any]=["at_last_launch":launchLoad ?? "none","now":fresh ? macLoad.report as Any : "not_checked"]
-        let data:[String:Any]=["schema":5,"game_mode":gameMode ? "on" : "off",
+        // Schema 6 (1.6.0): discord_presence, the level and whether Discord took the card (DiscordPresence.swift).
+        let discord:[String:Any]=["level":discordPresenceLevel.rawValue,"allowed":presenceAllowed,"connected":discordPresence.connected]
+        let data:[String:Any]=["schema":6,"discord_presence":discord,"game_mode":gameMode ? "on" : "off",
                                 "mouse_input":mouseInput.rawValue,"input_monitoring":InputMonitoring.access.rawValue,
                                 "other_apps":otherApps,"logging":logs,"battlenet":battleNet,"app_language":AppLanguage.current,"default_browser":browser,"main_display":display,"app_version":release?.appVersion ?? "unknown","runtime_version":state["active_runtime"] as? String ?? "not_installed","macos":ProcessInfo.processInfo.operatingSystemVersionString,"memory_gib":ProcessInfo.processInfo.physicalMemory>>30,"architecture":"arm64","free_gib":freeBytes>>30,"game_installed":gameInstalled,"display_resolution":"\(resolution.width)x\(resolution.height)","metalfx_upscaling":metalFXUpscaling ? "on" : "off","metalfx_sharpening":metalFXSharpening.rawValue,"install_location":InstallLocation.isStandard(root) ? "default" : (InstallLocation.isInternal(root) ? "other_internal" : "external"),"recent_stages":lastEvents,"last_error":failure.reportCode,"shaders":ShaderRecord.read(root:root),"shader_memory":shaderMemory]
         report=String(data:(try? JSONSerialization.data(withJSONObject:data,options:[.prettyPrinted,.sortedKeys])) ?? Data(),encoding:.utf8) ?? ""

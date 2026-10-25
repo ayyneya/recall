@@ -23,6 +23,11 @@ enum Brand {
     /// The "High-precision mouse feedback" post in #setups-and-performance (Settings › General ›
     /// Mouse). It opens only for the server's members, so the invite sits beside it.
     static let mouseFeedback=URL(string:"https://discord.com/channels/1559714959758196797/1563619981671792760")!
+    /// Blizzard's own Overwatch listing in Discord (its public application id), so the card reads
+    /// "Playing Overwatch" with Overwatch's icon, as it does for a PC player. The badge is the app's
+    /// icon from the repository, which Discord loads from this link.
+    static let discordApplicationID="356875221078245376"
+    static let discordBadge=URL(string:"https://raw.githubusercontent.com/\(repositoryPath)/main/app/Resources/AppIcon.png")!
     static var trademarks:String { L("Not affiliated with or endorsed by Blizzard Entertainment or Apple. Overwatch is a trademark of Blizzard Entertainment, Inc. Mac is a trademark of Apple Inc.") }
 
     // The author's links. Mosaic News opens on the App Store, where every Mac that runs
