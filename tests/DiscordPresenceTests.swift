@@ -138,17 +138,26 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         // After a match the game moves everyone to the MATCH channel (the voting cards).
         precondition(PresenceEvent.parse(logLine("==[VC] Notified Lobby of Active channel NONE -> MATCH",at:t)) == .channel(.match,time))
         precondition(PresenceEvent.parse(logLine("==[VC] Notified Lobby of Active channel NONE -> LOBBY",at:t)) == .channel(.other,time))
-        // The match is over when match-wide chat is enabled (flags gain 0x2), and not when they go back.
+        // The match is over when match-wide chat is enabled (flags gain 0x2); the game is left when it closes.
         precondition(PresenceEvent.parse(logLine("#=[VC] Channel Enabled Flags 0005 -> 0007",at:t)) == .matchOver(time))
-        precondition(PresenceEvent.parse(logLine("#=[VC] Channel Enabled Flags 0007 -> 0005",at:t)) == nil)
+        precondition(PresenceEvent.parse(logLine("#=[VC] Channel Enabled Flags 0007 -> 0005",at:t)) == .matchChatClosed(time))
+        // Why the voice channel changes: 3 is the player's own choice; the game's own moves are -2 and 5.
+        precondition(PresenceEvent.parse(logLine("#=[VC] __SetTargetActiveChannelType(TEAM -> PARTY) : 3",at:t)) == .switching(byPlayer:true,time))
+        precondition(PresenceEvent.parse(logLine("#=[VC] __SetTargetActiveChannelType(TEAM -> MATCH) : 5",at:t)) == .switching(byPlayer:false,time))
+        precondition(PresenceEvent.parse(logLine("#=[VC] __SetTargetActiveChannelType(UNKNOWN -> PARTY) : -2",at:t)) == .switching(byPlayer:false,time))
         precondition(PresenceEvent.parse(logLine("#=[VC] Channel Enabled Flags 0000 -> 0005",at:t)) == nil)
         precondition(PresenceEvent.parse(logLine("#=[VC] Channel Enabled Flags 0005 -> zz",at:t)) == nil)
         // Another flag changing while match-wide chat stays on is not the match ending.
         precondition(PresenceEvent.parse(logLine("#=[VC] Channel Enabled Flags 0007 -> 0006",at:t)) == nil)
         precondition(PresenceEvent.parse(logLine("#=[VC] Channel Enabled Flags 0002 -> 0003",at:t)) == nil)
         // Another player's voice (false) is told; the player's own (true) is not.
-        precondition(PresenceEvent.parse(logLine(teammate,at:t)) == .member(time) && PresenceEvent.parse(logLine(yourself,at:t)) == nil)
+        precondition(PresenceEvent.parse(logLine(teammate,at:t)) == .member(channel:"603564719",who:"0d4cbeb2@4a95b6d2",time) && PresenceEvent.parse(logLine(yourself,at:t)) == nil)
         precondition(PresenceEvent.parse(logLine("#=[VC] MemberAdded 603564719 23f9aaaf false",at:t)) == nil)
+        // Who leaves a channel, and which channel the game asks to join next (the members that follow name it).
+        precondition(PresenceEvent.parse(logLine("#=[VC] MemberRemoved 773141270 2e153316 844fe725@4a95b6d2 11b8077a 0",at:t)) == .memberLeft(channel:"773141270",who:"844fe725@4a95b6d2",time))
+        precondition(PresenceEvent.parse(logLine("==[VC] Request join channel PARTY 773141270 2e153316",at:t)) == .joining(.party,id:"773141270",time))
+        precondition(PresenceEvent.parse(logLine("==[VC] Request join channel MATCH 1505404435 59baa613",at:t)) == .joining(.match,id:"1505404435",time))
+        precondition(PresenceEvent.parse(logLine("==[VC] Join channel requested 9bd5d047 773141270 e5dca5ca@4a95b6d2",at:t)) == nil)
         precondition(PresenceEvent.parse(logLine(ready,at:t)) == .voiceReady(time))
         precondition(PresenceEvent.parse(logLine(closed,at:t)) == .voiceClosed(time))
         // The game writes Windows line endings.
@@ -166,31 +175,33 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
     static func tracker() {
         let t0=Date(timeIntervalSince1970:1_792_000_000)
         func after(_ s:Double)->Date { t0.addingTimeInterval(s) }
+        /// Another player's voice, in a channel no join was seen for.
+        func mate(_ time:Date)->PresenceEvent { .member(channel:"0",who:"mate",time) }
         var tracker=PresenceTracker()
         // Nothing said yet, or voice chat off: nothing is claimed.
         precondition(tracker.state(at:after(500)) == .unknown && tracker.nextChange(at:after(500)) == nil)
         tracker.apply(.voiceReady(after(26)))
         precondition(tracker.state(at:after(30)) == .menu)
         // A team channel that opens and closes in seconds is a match that was backed out of.
-        tracker.apply(.member(after(60)));tracker.apply(.channel(.team,after(60.5)))
+        tracker.apply(mate(after(60)));tracker.apply(.channel(.team,after(60.5)))
         precondition(tracker.state(at:after(63)) == .menu && tracker.nextChange(at:after(63))! > 7.4 && tracker.nextChange(at:after(63))! < 7.6)
         tracker.apply(.channel(nil,after(64)))
         precondition(tracker.state(at:after(200)) == .menu && tracker.nextChange(at:after(200)) == nil && !tracker.others)
         // One that holds, with the team's voices in it (they join as the channel opens), is a match, timed from the join.
-        tracker.apply(.member(after(299.5)));tracker.apply(.channel(.team,after(300)));tracker.apply(.member(after(301)))
+        tracker.apply(mate(after(299.5)));tracker.apply(.channel(.team,after(300)));tracker.apply(mate(after(301)))
         precondition(tracker.state(at:after(309)) == .menu && tracker.state(at:after(310)) == .match(since:after(300)))
         // The same channel said again keeps the first one's time.
         tracker.apply(.channel(.team,after(400)))
         precondition(tracker.state(at:after(500)) == .match(since:after(300)))
         // The results showing ends the match at once, though the team's channel stays open (an Arcade game kept it 52 s).
-        tracker.apply(.channel(nil,after(850)));tracker.apply(.member(after(851)));tracker.apply(.channel(.team,after(852)))
+        tracker.apply(.channel(nil,after(850)));tracker.apply(mate(after(851)));tracker.apply(.channel(.team,after(852)))
         precondition(tracker.state(at:after(870)) == .match(since:after(852)))
         tracker.apply(.matchOver(after(880)))
         precondition(tracker.state(at:after(881)) == .menu && tracker.state(at:after(890)) == .menu)
         tracker.apply(.channel(nil,after(897)))
         precondition(tracker.state(at:after(898)) == .menu && !tracker.over)
         // The mark means nothing with no team channel open, and is not carried to the next match.
-        tracker.apply(.matchOver(after(899)));tracker.apply(.member(after(899.5)));tracker.apply(.channel(.team,after(900)))
+        tracker.apply(.matchOver(after(899)));tracker.apply(mate(after(899.5)));tracker.apply(.channel(.team,after(900)))
         precondition(tracker.state(at:after(911)) == .match(since:after(900)))
         tracker.apply(.channel(nil,after(920)))
         // The screen after the match (the voting cards) is the end of it.
@@ -202,54 +213,113 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         tracker.apply(.channel(.team,after(1000)))
         precondition(tracker.state(at:after(1005)) == .menu && tracker.state(at:after(1011)) == .unknown && tracker.state(at:after(5000)) == .unknown)
         // Another player's voice arriving later makes it a match from the join.
-        tracker.apply(.member(after(1100)))
+        tracker.apply(mate(after(1100)))
         precondition(tracker.state(at:after(1101)) == .match(since:after(1000)))
         tracker.apply(.channel(nil,after(1200)))
         precondition(tracker.state(at:after(1201)) == .menu && !tracker.others)
         // In a group the game keeps only the group's channel and says nothing more: no claim of menus or a match.
         tracker.apply(.channel(.party,after(1300)))
-        precondition(tracker.state(at:after(1301)) == .group && tracker.state(at:after(9000)) == .group && tracker.nextChange(at:after(1301)) == nil)
+        precondition(tracker.state(at:after(1301)) == .unknown && tracker.state(at:after(9000)) == .unknown && tracker.nextChange(at:after(1301)) == nil)
         tracker.apply(.channel(nil,after(1500)))
         precondition(tracker.state(at:after(1501)) == .menu)
         // A group that moves to the team's channel for a match, and back to the group's after it.
-        tracker.apply(.channel(.party,after(1600)));tracker.apply(.member(after(1699)));tracker.apply(.channel(.team,after(1700)))
+        tracker.apply(.channel(.party,after(1600)));tracker.apply(mate(after(1699)));tracker.apply(.channel(.team,after(1700)))
         precondition(tracker.state(at:after(1705)) == .menu && tracker.state(at:after(1710)) == .match(since:after(1700)))
         tracker.apply(.matchOver(after(2390)));tracker.apply(.channel(.party,after(2400)))
-        precondition(tracker.state(at:after(2401)) == .group)
+        precondition(tracker.state(at:after(2401)) == .unknown)
         // The group's next match is a match again: what the last one's results said ends with its channel.
         tracker.apply(.channel(.team,after(2420)))
         precondition(tracker.state(at:after(2480)) == .match(since:after(2420)))
         tracker.apply(.matchOver(after(2490)));tracker.apply(.channel(.match,after(2492)));tracker.apply(.channel(.team,after(2494)))
         precondition(tracker.state(at:after(2540)) == .match(since:after(2494)))
         tracker.apply(.channel(.party,after(2499)))
-        precondition(tracker.state(at:after(2499.5)) == .group)
+        precondition(tracker.state(at:after(2499.5)) == .unknown)
+        // Who is in the group's voice chat: the player and the others named in its channel after the join,
+        // less those who leave. Voices in another channel are not the group's.
+        var voice=PresenceTracker()
+        voice.apply(.voiceReady(after(10)));voice.apply(.joining(.party,id:"P",after(20)))
+        voice.apply(.channel(.party,after(24)))
+        precondition(voice.groupVoice?.count == 1 && voice.groupVoice?.channel == "P")
+        voice.apply(.member(channel:"P",who:"a@h",after(200)));voice.apply(.member(channel:"P",who:"b@h",after(201)));voice.apply(.member(channel:"T",who:"c@h",after(202)))
+        voice.apply(.member(channel:"P",who:"a@h",after(203)))
+        precondition(voice.groupVoice?.count == 3 && voice.groupVoice?.channel == "P")
+        voice.apply(.memberLeft(channel:"P",who:"b@h",after(300)));voice.apply(.memberLeft(channel:"T",who:"a@h",after(301)))
+        precondition(voice.groupVoice?.count == 2 && voice.groupVoice?.channel == "P")
+        // A match's channel, then the group's again: the voices are named anew after the join.
+        let first=voice.groupVoice?.party
+        voice.apply(.joining(.team,id:"T2",after(400)));voice.apply(.channel(.team,after(401)));voice.apply(.member(channel:"T2",who:"d@h",after(402)))
+        voice.apply(.joining(.party,id:"P",after(1000)));voice.apply(.channel(.party,after(1001)))
+        // The party id Discord gets stays the same for the same channel, and is not the channel's.
+        precondition(first != nil && voice.groupVoice?.party == first && first?.contains("P") == false)
+        precondition(voice.groupVoice?.count == 1 && voice.groupVoice?.channel == "P")
+        voice.apply(.member(channel:"P",who:"a@h",after(1003)))
+        precondition(voice.groupVoice?.count == 2 && voice.groupVoice?.channel == "P")
+        // The voice service closing, or the log starting over, forgets them.
+        voice.apply(.reset);voice.apply(.channel(.party,after(1100)))
+        precondition(voice.groupVoice == nil)
+        // The player choosing their own voice moves them nowhere (a custom game's players switch between team,
+        // group and match voice, October 25): the match goes on in the group's or the match's voice, timer kept.
+        var custom=PresenceTracker()
+        custom.apply(.voiceReady(after(10)));custom.apply(.channel(.team,after(100)));custom.apply(mate(after(101)))
+        precondition(custom.state(at:after(200)) == .match(since:after(100)))
+        func choose(_ next:VoiceChannel,_ s:Double) { custom.apply(.switching(byPlayer:true,after(s)));custom.apply(.channel(nil,after(s)));custom.apply(.channel(next,after(s+2))) }
+        choose(.party,300)
+        precondition(custom.state(at:after(301)) == .match(since:after(100)) && custom.state(at:after(310)) == .match(since:after(100)) && custom.chosen)
+        choose(.match,400)
+        precondition(custom.state(at:after(410)) == .match(since:after(100)))
+        choose(.team,500)
+        precondition(custom.state(at:after(503)) == .match(since:after(100)))
+        // The game moving everyone to the match's channel as it ends is the menus again.
+        custom.apply(.matchOver(after(600)));custom.apply(.switching(byPlayer:false,after(630)));custom.apply(.channel(nil,after(630)));custom.apply(.channel(.match,after(632)))
+        precondition(custom.state(at:after(640)) == .menu && !custom.chosen)
+        // Kept in the group's voice, the match ends with its results, or when its match-wide chat closes
+        // (the game left); then the group's voice claims nothing, menus included.
+        var kept=PresenceTracker()
+        kept.apply(.voiceReady(after(10)));kept.apply(.channel(.team,after(100)));kept.apply(mate(after(101)))
+        kept.apply(.switching(byPlayer:true,after(300)));kept.apply(.channel(nil,after(300)));kept.apply(.channel(.party,after(302)))
+        precondition(kept.state(at:after(400)) == .match(since:after(100)))
+        kept.apply(.matchOver(after(500)))
+        precondition(kept.state(at:after(501)) == .unknown)
+        kept.apply(.channel(.team,after(600)));kept.apply(mate(after(601)))
+        kept.apply(.switching(byPlayer:true,after(700)));kept.apply(.channel(nil,after(700)));kept.apply(.channel(.match,after(702)))
+        precondition(kept.state(at:after(710)) == .match(since:after(600)))
+        kept.apply(.matchChatClosed(after(800)))
+        precondition(kept.state(at:after(801)) == .unknown,"a chosen match channel says nothing once the game is left")
+        // The player choosing a channel before the match was told (a team channel held for less than ten
+        // seconds) keeps nothing; the game putting them in the group's voice claims nothing either.
+        var early=PresenceTracker()
+        early.apply(.voiceReady(after(10)));early.apply(.channel(.team,after(100)))
+        early.apply(.switching(byPlayer:true,after(103)));early.apply(.channel(nil,after(103)));early.apply(.channel(.party,after(105)))
+        precondition(early.state(at:after(200)) == .unknown)
+        early.apply(.switching(byPlayer:false,after(300)));early.apply(.channel(nil,after(300)));early.apply(.channel(.party,after(302)))
+        precondition(early.state(at:after(400)) == .unknown && !early.chosen)
         // A channel nobody has seen is not guessed at.
         tracker.apply(.channel(.other,after(2500)))
         precondition(tracker.state(at:after(2501)) == .unknown)
         // The voice service going down (the game closing) and the log starting over clear everything.
         tracker.apply(.channel(.team,after(2550)));tracker.apply(.voiceClosed(after(2600)))
         precondition(tracker.state(at:after(2700)) == .unknown && !tracker.others)
-        tracker.apply(.voiceReady(after(2800)));tracker.apply(.member(after(2805)));tracker.apply(.channel(.team,after(2810)));tracker.apply(.reset)
+        tracker.apply(.voiceReady(after(2800)));tracker.apply(mate(after(2805)));tracker.apply(.channel(.team,after(2810)));tracker.apply(.reset)
         precondition(tracker.state(at:after(2900)) == .unknown && !tracker.others)
         // A join with no menu line before it (the line was missed) still counts as a match, with the team in it.
-        tracker.apply(.channel(.team,after(3000)));tracker.apply(.member(after(3001)))
+        tracker.apply(.channel(.team,after(3000)));tracker.apply(mate(after(3001)))
         precondition(tracker.state(at:after(3100)) == .match(since:after(3000)))
         // Lines from before the game opened are an earlier run's.
         var late=PresenceTracker(notBefore:after(1000))
-        late.apply(.voiceReady(after(900)));late.apply(.member(after(949)));late.apply(.channel(.team,after(950)));late.apply(.channel(.party,after(960)))
+        late.apply(.voiceReady(after(900)));late.apply(mate(after(949)));late.apply(.channel(.team,after(950)));late.apply(.channel(.party,after(960)))
         precondition(late.state(at:after(2000)) == .unknown && !late.others)
-        late.apply(.voiceReady(after(1026)));late.apply(.channel(.team,after(1100)));late.apply(.member(after(1101)))
+        late.apply(.voiceReady(after(1026)));late.apply(.channel(.team,after(1100)));late.apply(mate(after(1101)))
         precondition(late.state(at:after(2000)) == .match(since:after(1100)))
     }
 
     static func cards() {
-        let texts=PresenceTexts(menu:"In Menus",match:"In Match",group:"In a Group",badge:"Playing on Mac with Recall")
+        let texts=PresenceTexts(menu:"In Menus",match:"In Match",voice:"In Group Voice",badge:"Playing on Mac with Recall")
         let launched=Date(timeIntervalSince1970:1_792_000_000),since=Date(timeIntervalSince1970:1_792_000_600)
         func start(_ card:[String:Any])->Int? { (card["timestamps"] as? [String:Int])?["start"] }
         // Normal is what a PC player gets, whatever the log says: the game, and the time since it opened.
-        for state in [PresenceState.unknown,.menu,.group,.match(since:since)] {
-            let card=PresenceCard.activity(state:state,level:.normal,launched:launched,texts:texts)
-            precondition(card["type"] as? Int == 0 && start(card) == 1_792_000_000 && card["details"] == nil && card["assets"] == nil)
+        for state in [PresenceState.unknown,.menu,.match(since:since)] {
+            let card=PresenceCard.activity(state:state,voice:GroupVoice(count:3,channel:"773141270",party:"a1b2"),level:.normal,launched:launched,texts:texts)
+            precondition(card["type"] as? Int == 0 && start(card) == 1_792_000_000 && card["details"] == nil && card["assets"] == nil && card["party"] == nil && card["state"] == nil)
         }
         let unknown=PresenceCard.activity(state:.unknown,level:.live,launched:launched,texts:texts)
         precondition(unknown["details"] == nil && start(unknown) == 1_792_000_000)
@@ -257,8 +327,19 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         precondition(menu["details"] as? String == "In Menus" && start(menu) == 1_792_000_000)
         let match=PresenceCard.activity(state:.match(since:since),level:.live,launched:launched,texts:texts)
         precondition(match["details"] as? String == "In Match" && start(match) == 1_792_000_600)
-        let group=PresenceCard.activity(state:.group,level:.live,launched:launched,texts:texts)
-        precondition(group["details"] as? String == "In a Group" && start(group) == 1_792_000_000)
+        precondition(menu["state"] == nil && menu["party"] == nil)
+        // In the group's voice chat: Discord shows "In Group Voice (3 of 6)" under where the player is (nothing,
+        // when the log cannot say). The party's size is the voice chat's, which the line names.
+        let group=PresenceCard.activity(state:.unknown,voice:GroupVoice(count:3,channel:"773141270",party:"a1b2"),level:.live,launched:launched,texts:texts)
+        let party=group["party"] as? [String:Any],id=party?["id"] as? String
+        precondition(group["details"] == nil && group["state"] as? String == "In Group Voice" && party?["size"] as? [Int] == [3,6])
+        let voiced=PresenceCard.activity(state:.match(since:since),voice:GroupVoice(count:3,channel:"773141270",party:"a1b2"),level:.live,launched:launched,texts:texts)
+        precondition(voiced["details"] as? String == "In Match" && voiced["state"] as? String == "In Group Voice" && start(voiced) == 1_792_000_600)
+        precondition(id == "a1b2")
+        precondition(JSONSerialization.isValidJSONObject(voiced))
+        // Never more than six of six.
+        let crowded=PresenceCard.activity(state:.menu,voice:GroupVoice(count:8,channel:"x",party:"c3"),level:.live,launched:launched,texts:texts)
+        precondition((crowded["party"] as? [String:Any])?["size"] as? [Int] == [6,6])
         // The Recall badge, loaded from the repository's icon, on every Live card.
         for card in [unknown,menu,group,match] {
             let assets=card["assets"] as? [String:String]
@@ -267,7 +348,7 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         precondition(Brand.discordBadge.scheme == "https" && Brand.discordApplicationID == "356875221078245376")
         precondition(JSONSerialization.isValidJSONObject(match))
         // Discord wants two characters at least in a line, and no more than 128.
-        precondition((2...128).contains((menu["details"] as! String).count) && (2...128).contains((match["details"] as! String).count) && (2...128).contains((group["details"] as! String).count))
+        precondition((2...128).contains((menu["details"] as! String).count) && (2...128).contains((match["details"] as! String).count) && (2...128).contains((group["state"] as! String).count))
         precondition(DiscordPresenceLevel.allCases == [.normal,.live] && DiscordPresenceLevel(rawValue:"gone") == nil && DiscordPresenceLevel.standard == .live)
     }
 
@@ -308,7 +389,7 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
     }
     static func kinds(_ events:[PresenceEvent])->[String] {
         events.map { switch $0 { case .reset:return "reset";case .voiceReady:return "ready";case .voiceClosed:return "closed"
-                                 case .channel(.team?,_):return "joined";case .channel(.party?,_):return "party";case .channel(.other?,_):return "other";case .channel(.match?,_):return "postgame";case .channel(nil,_):return "left";case .member:return "member";case .matchOver:return "over" } }
+                                 case .channel(.team?,_):return "joined";case .channel(.party?,_):return "party";case .channel(.other?,_):return "other";case .channel(.match?,_):return "postgame";case .channel(nil,_):return "left";case .member:return "member";case .memberLeft:return "memberLeft";case .joining:return "joining";case .switching:return "switching";case .matchChatClosed:return "chatClosed";case .matchOver:return "over" } }
     }
 
     static func tail() {
@@ -445,7 +526,7 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
     static func spam() {
         let server=FakeDiscord(),dir=folder(),log=dir.appendingPathComponent("Overwatch.log")
         defer { try? FileManager.default.removeItem(at:dir) }
-        let texts=PresenceTexts(menu:"In Menus",match:"In Match",group:"In a Group",badge:"Playing on Mac")
+        let texts=PresenceTexts(menu:"In Menus",match:"In Match",voice:"In Group Voice",badge:"Playing on Mac")
         let opened=Date().addingTimeInterval(-90)
         try! (logLine(ready,at:opened.addingTimeInterval(26))+"\r\n").write(to:log,atomically:true,encoding:.utf8)
         let presence=DiscordPresence(level:.live,texts:texts,ipc:DiscordIPC(applicationID:"1234",paths:[server.path],spacing:0.05,burst:3,window:1.5,retry:0.3))
@@ -464,7 +545,7 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
     static func endToEnd() {
         let server=FakeDiscord(),dir=folder(),log=dir.appendingPathComponent("Overwatch.log")
         defer { try? FileManager.default.removeItem(at:dir) }
-        let texts=PresenceTexts(menu:"In Menus",match:"In Match",group:"In a Group",badge:"Playing on Mac")
+        let texts=PresenceTexts(menu:"In Menus",match:"In Match",voice:"In Group Voice",badge:"Playing on Mac")
         let opened=Date().addingTimeInterval(-90)
         try! (logLine("prism: Info: GPU 0",at:opened)+"\r\n").write(to:log,atomically:true,encoding:.utf8)
         let presence=DiscordPresence(level:.live,texts:texts,ipc:DiscordIPC(applicationID:"1234",paths:[server.path],spacing:0.1,burst:100,retry:0.3))
@@ -490,8 +571,16 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         append(logLine(leave,at:Date())+"\r\n",to:log)
         precondition(details(server.card(fd)) == "In Menus")
         // A group: the game keeps only the group's channel, so neither menus nor a match is claimed.
-        append(logLine(partyJoin,at:Date())+"\r\n",to:log)
-        precondition(details(server.card(fd)) == "In a Group")
+        append(logLine("==[VC] Request join channel PARTY 773141270 2e153316",at:Date())+"\r\n"+logLine(yourself.replacingOccurrences(of:"603564719",with:"773141270"),at:Date())+"\r\n"+logLine(partyJoin,at:Date())+"\r\n",to:log)
+        func size(_ card:Any??)->[Int]? { (((card ?? nil) as? [String:Any])?["party"] as? [String:Any])?["size"] as? [Int] }
+        var grouped=server.card(fd)
+        precondition(details(grouped) == nil && size(grouped) == [1,6],"\(String(describing:grouped))")
+        // A friend joins the group's voice chat, and leaves it (the lines as a real group's log has them).
+        append(logLine("#=[VC] MemberAdded 773141270 2e153316 844fe725@4a95b6d2 11b8077a false",at:Date())+"\r\n",to:log)
+        grouped=server.card(fd)
+        precondition(details(grouped) == nil && ((grouped ?? nil) as? [String:Any])?["state"] as? String == "In Group Voice" && size(grouped) == [2,6])
+        append(logLine("#=[VC] MemberRemoved 773141270 2e153316 844fe725@4a95b6d2 11b8077a 0",at:Date())+"\r\n",to:log)
+        precondition(size(server.card(fd)) == [1,6])
         append(logLine(partyLeave,at:Date())+"\r\n",to:log)
         precondition(details(server.card(fd)) == "In Menus")
         // Normal says nothing the game says.

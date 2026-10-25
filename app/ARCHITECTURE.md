@@ -381,14 +381,25 @@ results ending it: the flags "Channel Enabled Flags 0005 -> 0007" (match-wide ch
 match is over, in every mode, seconds before the MATCH channel the game opens for the voting cards
 (Quick Play) or tens of seconds before the player leaves the team's channel (an Arcade game kept it
 52 seconds), and then the card goes back to In Menus. From the moment a group forms the game keeps only the group's (PARTY) channel and the log says
-nothing more about menus or matches (seen with a group of two, October 25), so the card says
-In a Group and claims nothing else. Nothing reads the game's memory, screen or network traffic.
+nothing more about menus or matches (seen with a group of two, October 25), so the card's first line
+claims neither. The player's own choice of voice (team, group or match voice; the game logs it as
+`__SetTargetActiveChannelType(A -> B) : 3`, where its own moves give -2 and, at a match's end, 5) moves
+no one: a match goes on, with its timer, in the group's or the match-wide voice a custom game's players
+switch to, until its results (match-wide chat opening) or leaving it (match-wide chat closing). Menus
+are never claimed from the group's voice, since a group's match can begin without a line. The second
+line, in the group's voice, is "In Group Voice" with Discord's party size ("(2 of 6)", six
+being Overwatch's largest group): how many are in the group's voice chat, the player included, from the
+members the game names in that channel after it asks to join it ("Request join channel PARTY <id>",
+then `MemberAdded <id> … false` and `MemberRemoved <id> …`). The log names only who is in voice, never
+the group itself, so the line says voice, not group (a friend with group voice off is not counted). The
+party's id is random, made when the game joins that voice chat (nothing derived from the channel's id, a
+short number any hash of which is easily reversed, leaves the Mac). Nothing reads the game's memory, screen or network traffic.
 Without voice chat's Auto-Join the log says nothing about where the player is, and the card then
 only says that the game runs. China's Battle.net never starts it (Discord is
 blocked there). Support can turn it off: `defaults write org.overwatch2mac.launcher discordPresence
 -bool false`, which, like the region, is looked at again each time the status is read. The card waits
 for that first read, when the region is known. The support report names the level, whether Discord
-answered and whether it took the last card (Discord answers each one; schema 5).
+answered and whether it took the last card (Discord answers each one; schema 6).
 `tests/DiscordPresenceTests.swift` covers the socket protocol, the log lines, the tracking and the
 whole path against a fake Discord.
 

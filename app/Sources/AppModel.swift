@@ -36,7 +36,7 @@ final class AppModel {
         DiscordPresenceLevel(rawValue:UserDefaults.standard.string(forKey:"discordPresenceLevel") ?? "") ?? .standard
     }
     nonisolated private static func presenceTexts()->PresenceTexts {
-        PresenceTexts(menu:L("In Menus"),match:L("In Match"),group:L("In a Group"),badge:L("Playing on Mac with {0}",Brand.name))
+        PresenceTexts(menu:L("In Menus"),match:L("In Match"),voice:L("In Group Voice"),badge:L("Playing on Mac with {0}",Brand.name))
     }
     /// Overwatch's own app, which macOS shows as running while the game does (game_mode_app.py).
     nonisolated static let gameBundleID="org.overwatch2mac.overwatch"

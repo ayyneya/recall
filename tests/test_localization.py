@@ -49,7 +49,7 @@ NOT_SCREEN_TEXT = {
     # Wine's and Overwatch's log lines, which Save Logs (LogBundle) puts on its timeline.
     'wine: Unhandled', 'Unhandled exception', 'File read failed', 'Failed to read data from TACT',
     # The voice chat lines Overwatch.log keeps, which the Discord card follows (DiscordPresence.swift).
-    'Notified Lobby of Active channel ', 'Auto-Join Enabled Flags ', 'Channel Enabled Flags ',
+    'Notified Lobby of Active channel ', 'Auto-Join Enabled Flags ', 'Channel Enabled Flags ', 'Request join channel ',
     '**Crashing Thread**', 'Running Time:', 'Most Recent Logs:', 'Launch timer expired',
     'Cancel requested for active operation - OP_UPDATE', "OP_UPDATE for '' done Canceling", 'done Canceling',
 }

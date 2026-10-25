@@ -54,12 +54,25 @@ enum PresenceEvent: Equatable {
     /// The match is over: "Channel Enabled Flags 0005 -> 0007" gains the match-wide chat the game opens
     /// when the match ends (the results and the voting cards). It comes seconds before the game moves to
     /// the MATCH channel (Quick Play) or while the team's stays open until the player leaves (Arcade: 52
-    /// seconds), and the Practice Range never has it. The flags going back is not told.
+    /// seconds), and the Practice Range never has it.
     case matchOver(Date)
-    /// Another player joined the channel ("MemberAdded … false"; the player's own entry says true).
-    /// In a match the team's voices arrive within a second or two of the channel; in the Practice
-    /// Range and with bots there are none.
-    case member(Date)
+    /// Match-wide chat closing ("Channel Enabled Flags 0007 -> 0005"): the player has left the game it was
+    /// for (an Arcade game's end, a custom game's lobby).
+    case matchChatClosed(Date)
+    /// Another player joined a voice channel ("MemberAdded <channel> <id> <user@host> <id> false"; the
+    /// player's own entry says true). In a match the team's voices arrive within a second or two of the
+    /// channel; in the Practice Range and with bots there are none.
+    case member(channel:String,who:String,Date)
+    /// A player left a voice channel ("MemberRemoved <channel> <id> <user@host> <id> 0").
+    case memberLeft(channel:String,who:String,Date)
+    /// The game asks to join a voice channel, by its kind and id ("Request join channel PARTY 773141270 …"),
+    /// after leaving the one before: the members that follow with that id are the ones in it.
+    case joining(VoiceChannel?,id:String,Date)
+    /// The voice channel is about to change, and why ("__SetTargetActiveChannelType(TEAM -> PARTY) : 3").
+    /// 3 is the player's own choice (Social › Voice Chat: team, group or match voice), which moves only
+    /// their voice; the game's own moves give -2 (joining as a game or a group starts) or 5 (everyone to
+    /// the MATCH channel as a match ends). Seen October 25: a custom game's switches, a Quick Play's end.
+    case switching(byPlayer:Bool,Date)
 
     private static let stamps:ISO8601DateFormatter={
         let formatter=ISO8601DateFormatter();formatter.formatOptions=[.withInternetDateTime,.withFractionalSeconds];return formatter
@@ -72,23 +85,39 @@ enum PresenceEvent: Equatable {
         func words(after marker:String)->[String]? {
             message.range(of:marker).map { message[$0.upperBound...].split(separator:" ").map(String.init) }
         }
+        func kind(_ name:String)->VoiceChannel? {
+            switch name {
+            case "NONE": return nil
+            case "TEAM": return .team
+            case "PARTY": return .party
+            case "MATCH": return .match
+            default: return .other
+            }
+        }
         if let parts=words(after:"Notified Lobby of Active channel ") {
             guard parts.count == 3,parts[1] == "->" else { return nil }
-            switch parts[2] {
-            case "NONE": return .channel(nil,time)
-            case "TEAM": return .channel(.team,time)
-            case "PARTY": return .channel(.party,time)
-            case "MATCH": return .channel(.match,time)
-            default: return .channel(.other,time)
-            }
+            return .channel(kind(parts[2]),time)
+        }
+        if let parts=words(after:"__SetTargetActiveChannelType(") {
+            guard parts.count == 5,parts[1] == "->",let reason=Int(parts[4]) else { return nil }
+            return .switching(byPlayer:reason == 3,time)
+        }
+        if let parts=words(after:"Request join channel ") {
+            guard parts.count >= 2,parts[0] != "NONE" else { return nil }
+            return .joining(kind(parts[0]),id:parts[1],time)
         }
         if let parts=words(after:"Channel Enabled Flags ") {
             guard parts.count == 3,parts[1] == "->",let before=Int(parts[0],radix:16),let after=Int(parts[2],radix:16) else { return nil }
-            // Only the change that turns match-wide chat on; another flag changing while it stays on is not the end.
-            return before & 0x2 == 0 && after & 0x2 != 0 ? .matchOver(time) : nil
+            // Only match-wide chat turning on or off; another flag changing while it stays as it was says nothing.
+            if before & 0x2 == 0 && after & 0x2 != 0 { return .matchOver(time) }
+            if before & 0x2 != 0 && after & 0x2 == 0 { return .matchChatClosed(time) }
+            return nil
         }
         if let parts=words(after:"MemberAdded ") {
-            return parts.count == 5 && parts[4] == "false" ? .member(time) : nil
+            return parts.count == 5 && parts[4] == "false" ? .member(channel:parts[0],who:parts[2],time) : nil
+        }
+        if let parts=words(after:"MemberRemoved ") {
+            return parts.count == 5 ? .memberLeft(channel:parts[0],who:parts[2],time) : nil
         }
         if let parts=words(after:"Auto-Join Enabled Flags ") {
             guard parts.count == 3,parts[1] == "->" else { return nil }
@@ -105,10 +134,18 @@ enum PresenceState: Equatable {
     /// No signal (yet): the menus are not reached, or the player has voice chat off, so nothing is claimed.
     case unknown
     case menu
-    /// In a group: Overwatch then keeps only the group's voice channel, and the log says nothing of
-    /// menus or matches, so nothing more is claimed (seen with a group of two, October 25).
-    case group
     case match(since:Date)
+}
+
+/// The group's voice chat: how many are in it, the player included, and its channel. The log names
+/// only who is in voice, never the group itself, so the card says In Group Voice, not the group's size.
+struct GroupVoice: Equatable {
+    let count:Int
+    let channel:String
+    /// The party id Discord gets: random, made when the game joins this channel, and the same until it
+    /// joins another. Nothing derived from the channel's id (a short number, easily guessed from any
+    /// hash of it) leaves this Mac.
+    let party:String
 }
 
 /// Follows the log's events. Pure: the clock comes in, so the tests can move it.
@@ -125,33 +162,95 @@ struct PresenceTracker {
     /// The match's results are showing (the team's channel stays open a while longer).
     private(set) var over=false
     private var since:Date?
+    /// The voice channel last asked for (its kind and id).
+    private var joined:(kind:VoiceChannel?,id:String)?
+    /// The group's voice channel, the other players in it (named after the game asked to join it), and
+    /// the random party id the card uses for it.
+    private var party:(id:String,voices:Set<String>,card:String)?
+    /// The player is moving their own voice to another channel (it goes through none on the way).
+    private var choosing=false
+    /// The channel is the player's own choice, not where the game put them.
+    private(set) var chosen=false
+    /// Where the player was when they chose another voice channel: choosing voice moves no one, so a
+    /// match goes on in the group's or the match's voice (a custom game's players often switch).
+    private var kept:PresenceState?
     init(notBefore:Date = .distantPast) { self.notBefore=notBefore }
     mutating func apply(_ event:PresenceEvent) {
         switch event {
-        case .reset: voiceReady=false;channel=nil;since=nil;others=false;over=false
+        case .reset: forget()
         case .voiceReady(let time): if time >= notBefore { voiceReady=true }
-        case .voiceClosed(let time): if time >= notBefore { voiceReady=false;channel=nil;since=nil;others=false;over=false }
-        case .matchOver(let time): if time >= notBefore && channel == .team { over=true }
-        case .member(let time): if time >= notBefore { others=true }
+        case .voiceClosed(let time): if time >= notBefore { forget() }
+        case .matchOver(let time):
+            guard time >= notBefore else { return }
+            if channel == .team { over=true }
+            // A match kept through the player's own voice choice is over too.
+            if case .match? = kept { kept=voiceReady ? .menu : nil }
+        case .matchChatClosed(let time): if time >= notBefore,case .match? = kept { kept=nil }
+        case .switching(let byPlayer,let time):
+            guard time >= notBefore else { return }
+            // Only a match is kept: menus are never claimed from a voice the player chose.
+            if byPlayer && !choosing { if case .match=state(at:time) { kept=state(at:time) } else { kept=nil } }
+            choosing=byPlayer
+        case .member(let id,let who,let time):
+            guard time >= notBefore else { return }
+            // A team's voice: the group's or the match-wide channel's players are not one (a custom game
+            // talks in its match-wide channel).
+            if !(joined?.id == id && joined?.kind != .team) { others=true }
+            if id == party?.id { party?.voices.insert(who) }
+        case .memberLeft(let id,let who,let time): if time >= notBefore && id == party?.id { party?.voices.remove(who) }
+        // The game leaves every channel before it joins one, and names who is in the new one after.
+        case .joining(let kind,let id,let time):
+            guard time >= notBefore else { return }
+            joined=(kind,id)
+            if kind == .party { party=(id,[],party?.id == id ? party!.card : UUID().uuidString) }
         case .channel(let next,let time):
+            guard time >= notBefore else { return }
+            // The player's own switch passes through no channel: that is not leaving anything.
+            if next == nil && choosing { return }
             // The same channel again keeps the first time. Another channel ends what the results said
             // (a group goes from its own channel to the team's for each match, and back after it).
-            guard time >= notBefore else { return }
             if next != channel { channel=next;since=next == nil ? nil : time;over=false }
             if next == nil { others=false;over=false }
+            if next != nil {
+                chosen=choosing;choosing=false
+                // Where the game puts the player is a new place; what they were keeping is over.
+                if !chosen { kept=nil }
+            }
         }
     }
+    private mutating func forget() {
+        voiceReady=false;channel=nil;since=nil;others=false;over=false;joined=nil;party=nil
+        choosing=false;chosen=false;kept=nil
+    }
     func state(at now:Date)->PresenceState {
+        // A match the player was in when they chose their voice goes on, with its own timer.
+        if case .match? = kept { return kept! }
+        let place=channelState(at:now)
+        if case .match = place { return place }
+        // In the group's voice a match can begin without a line, so menus are not kept there.
+        return channel == .party ? place : (kept ?? place)
+    }
+    /// The group's voice chat, while the player is in it.
+    var groupVoice:GroupVoice? {
+        guard channel == .party,let party else { return nil }
+        return GroupVoice(count:party.voices.count+1,channel:party.id,party:party.card)
+    }
+    /// Where the channel alone says the player is.
+    private func channelState(at now:Date)->PresenceState {
         switch channel {
         case .team?:
             // The results are showing: the match is over, whatever the channel still says.
             if over { return voiceReady ? .menu : .unknown }
             // A team channel with nobody else in it is the Practice Range or a game with bots: nothing is claimed.
-            guard let since,now.timeIntervalSince(since) >= Self.hold else { return voiceReady ? .menu : .unknown }
+            // Chosen by the player, a team channel is a game they are in already: not the menus.
+            guard let since,now.timeIntervalSince(since) >= Self.hold else { return voiceReady && !chosen ? .menu : .unknown }
             return others ? .match(since:since) : .unknown
-        case .party?: return .group
-        // The screen after a match: it is over, and the player is back in the menus' flow.
-        case .match?: return voiceReady ? .menu : .unknown
+        // In a group the game keeps the group's voice through menus and matches alike, and the log says
+        // nothing of either (seen with a group of two, October 25): nothing is claimed.
+        case .party?: return .unknown
+        // The screen after a match, where the game moved everyone: it is over, and the player is back in
+        // the menus' flow. Chosen by the player (a custom game's match-wide voice), it says nothing.
+        case .match?: return chosen ? .unknown : (voiceReady ? .menu : .unknown)
         case .other?: return .unknown
         case nil: return voiceReady ? .menu : .unknown
         }
@@ -168,24 +267,29 @@ struct PresenceTracker {
 struct PresenceTexts: Equatable {
     var menu:String
     var match:String
-    var group:String
+    /// The second line in the group's voice chat, which Discord follows with how many of six are in it
+    /// ("In Group Voice (3 of 6)").
+    var voice:String
     /// The hover text of the small Recall badge.
     var badge:String
 }
 
 enum PresenceCard {
+    /// Overwatch's largest group: six (6v6).
+    static let largestGroup=6
     /// The card Discord shows for the state. Normal is what Discord shows a PC player; Live adds the
     /// state line and the badge. Times are Unix seconds. The player's own Discord decides whether
     /// anyone sees it.
-    static func activity(state:PresenceState,level:DiscordPresenceLevel,launched:Date,texts:PresenceTexts)->[String:Any] {
+    static func activity(state:PresenceState,voice:GroupVoice?=nil,level:DiscordPresenceLevel,launched:Date,texts:PresenceTexts)->[String:Any] {
         var card:[String:Any]=["type":0,"timestamps":["start":Int(launched.timeIntervalSince1970)]]
         guard level == .live else { return card }
         switch state {
         case .unknown: break
         case .menu: card["details"]=texts.menu
-        case .group: card["details"]=texts.group
         case .match(let since): card["details"]=texts.match;card["timestamps"]=["start":Int(since.timeIntervalSince1970)]
         }
+        // The party's size is the voice chat's: the line says so, since the log never tells the group's own.
+        if let voice { card["state"]=texts.voice;card["party"]=["id":voice.party,"size":[min(voice.count,largestGroup),largestGroup]] }
         card["assets"]=["small_image":Brand.discordBadge.absoluteString,"small_text":texts.badge]
         return card
     }
@@ -599,7 +703,7 @@ final class DiscordPresence {
     private func refresh() {
         guard running else { return }
         let now=Date()
-        let card=PresenceCard.activity(state:tracker.state(at:now),level:level,launched:launched,texts:texts)
+        let card=PresenceCard.activity(state:tracker.state(at:now),voice:tracker.groupVoice,level:level,launched:launched,texts:texts)
         if shown != card as NSDictionary { shown=card as NSDictionary;ipc.set(card) }
         promotion?.cancel();promotion=nil
         if let wait=tracker.nextChange(at:now) {
