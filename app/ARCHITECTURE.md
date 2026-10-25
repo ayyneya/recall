@@ -370,9 +370,9 @@ the card): Normal is that card; Live, the default, adds In Menus or In Match, th
 and a small Recall badge (the app icon, which Discord loads from the repository). The card follows
 the game: it goes up when macOS reports Overwatch's own app (`org.overwatch2mac.overwatch`,
 `scripts/game_mode_app.py`) opening, or when the running screen finds the game running, and comes
-down when it quits. Live follows Overwatch.log, a file the game keeps for itself, with a file-system
+down when it quits (a process dispatch source on the game's own process says when). Live follows Overwatch.log, a file the game keeps for itself, with a file-system
 event source (`OverwatchLogTail`; nothing polls): it reads what is there once, then only what is
-added. "Auto-Join Enabled Flags" leaving 0000 is the menus; the channel the game talks in
+added; before the game's first run makes the Logs folder, the nearest folder above it is watched. "Auto-Join Enabled Flags" leaving 0000 is the menus; the channel the game talks in
 ("Notified Lobby of Active channel", `PresenceTracker`) says the rest: the team's is a match, counted
 once it has held ten seconds, because a match loading and backed out of opens it for two to seven,
 and once another player's voice is in it (`MemberAdded … false`; a team's arrive within a second or
@@ -386,7 +386,9 @@ In a Group and claims nothing else. Nothing reads the game's memory, screen or n
 Without voice chat's Auto-Join the log says nothing about where the player is, and the card then
 only says that the game runs. China's Battle.net never starts it (Discord is
 blocked there). Support can turn it off: `defaults write org.overwatch2mac.launcher discordPresence
--bool false`. The support report names the level and whether Discord took the card (schema 5).
+-bool false`, which, like the region, is looked at again each time the status is read. The card waits
+for that first read, when the region is known. The support report names the level, whether Discord
+answered and whether it took the last card (Discord answers each one; schema 5).
 `tests/DiscordPresenceTests.swift` covers the socket protocol, the log lines, the tracking and the
 whole path against a fake Discord.
 

@@ -29,6 +29,7 @@ final class AppModel {
         didSet {
             UserDefaults.standard.set(discordPresenceLevel.rawValue,forKey:"discordPresenceLevel")
             discordPresence.update(level:discordPresenceLevel,texts:Self.presenceTexts())
+            checkPresence()
         }
     }
     nonisolated private static var storedPresenceLevel:DiscordPresenceLevel {
@@ -43,22 +44,50 @@ final class AppModel {
         NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == gameBundleID }?.processIdentifier
     }
     @ObservationIgnored private let discordPresence=DiscordPresence(level:AppModel.storedPresenceLevel,texts:AppModel.presenceTexts())
-    /// Discord is blocked in mainland China, and previews never touch the real Discord.
-    private var presenceAllowed:Bool { (UserDefaults.standard.object(forKey:"discordPresence") as? Bool ?? true) && showsDiscord && !isPreview }
-    /// The game process the card was started for.
+    /// Discord is blocked in mainland China, and previews never touch the real Discord. The region is
+    /// known once the worker's status has been read (until then it is only the Mac's own suggestion).
+    private var presenceAllowed:Bool { (UserDefaults.standard.object(forKey:"discordPresence") as? Bool ?? true) && statusRead && showsDiscord && !isPreview }
+    @ObservationIgnored private var statusRead=false
+    /// The game process the card was started for, and macOS's report of its end (a process dispatch source).
     @ObservationIgnored private var presencePid:pid_t?
-    /// The list of running apps changed: the game's app is in it (the card goes up), or the game the card
-    /// was started for is gone (it comes down). Other apps coming and going change nothing.
+    @ObservationIgnored private var presenceExit:DispatchSourceProcess?
+    /// The run that just ended: macOS can list its app for a moment after the process is gone.
+    @ObservationIgnored private var presenceEnded:pid_t?
+    /// The game's app, unless it is the run that just ended.
+    private var runningGame:pid_t? { Self.runningGame().flatMap { $0 == presenceEnded ? nil : $0 } }
+    /// The list of running apps changed: the game's app is in it, and the card goes up. Its end is
+    /// told by the exit watch, so other apps coming and going change nothing.
     private func runningAppsChanged() {
-        if let game=Self.runningGame() { syncPresence(game:game) }
-        else if let pid=presencePid,kill(pid,0) != 0 { syncPresence(game:nil) }
+        if let game=runningGame { syncPresence(game:game) }
     }
+    /// Whether the card may show changed (the region read, the level chosen, support's switch):
+    /// the card that is up, or the game that runs, is looked at again.
+    private func checkPresence() { syncPresence(game:presencePid ?? runningGame) }
     /// The card follows the game: it appears when Overwatch opens and comes down when it closes.
     /// `game` is the game's process, nil when it isn't running.
     private func syncPresence(game:pid_t?) {
-        guard let game,presenceAllowed else { presencePid=nil;discordPresence.end();return }
+        guard let game,presenceAllowed else { stopPresence();return }
+        // This game's card is up already (every app opening or closing on the Mac comes here).
+        if presencePid == game { return }
+        // Another run of the game: its own timer and log, from the start.
+        stopPresence()
         presencePid=game
+        let exit=DispatchSource.makeProcessSource(identifier:game,eventMask:.exit,queue:.main)
+        exit.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.presenceGameEnded(game) } }
+        exit.resume();presenceExit=exit
         discordPresence.begin(logURL:OverwatchLogTail.logURL(root:root),launched:DiscordPresence.startTime(of:game) ?? NSRunningApplication(processIdentifier:game)?.launchDate)
+        // A process that ended before the watch was set up never reports.
+        if kill(game,0) != 0 && errno == ESRCH { presenceGameEnded(game) }
+    }
+    private func stopPresence() {
+        presenceExit?.cancel();presenceExit=nil;presencePid=nil
+        discordPresence.end()
+    }
+    /// The game the card was for has ended: the card comes down, unless another run is up already.
+    private func presenceGameEnded(_ pid:pid_t) {
+        guard presencePid == pid else { return }
+        presenceEnded=pid;stopPresence()
+        runningAppsChanged()
     }
     /// Apple's Metal Performance HUD over Overwatch (worker: launch --metal-hud). Battle.net
     /// starts the game with its own environment, so Settings changes it only while
@@ -544,6 +573,8 @@ final class AppModel {
             if clientInstalled || state["battlenet_region"] != nil { battleNetRegion=installedRegion }
             if let language=(state["battlenet_language"] as? String).flatMap(BattleNetLanguage.init) { battleNetLanguage=language }
         }
+        // The region is known now: the Discord card follows it (and support's switch) from here.
+        statusRead=true;checkPresence()
         freeBytes=(status["free_bytes"] as? NSNumber)?.uint64Value ?? 0
         // Match Finder's "available" figure, which includes purgeable storage.
         if let available=try? root.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,available>0 {
@@ -590,13 +621,13 @@ final class AppModel {
             guard let pid=(note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier else { return }
             Task { @MainActor in self?.appEnded(pid) }
         }
-        // Overwatch opens or closes (Battle.net starts it, so Recall is not told otherwise): the card goes up or
-        // comes down. macOS never posts "launched" for the game (Wine starts it, not the Finder), but it does
-        // change its list of running apps, with the game's own app in it (checked October 25).
+        // Overwatch opens (Battle.net starts it, so Recall is not told otherwise): the card goes up. macOS
+        // never posts "launched" for the game (Wine starts it, not the Finder), but it does change its list
+        // of running apps, with the game's own app in it (checked October 25). A game already running is
+        // found once the status is read (refresh), when the region is known.
         runningObservation=NSWorkspace.shared.observe(\.runningApplications) { [weak self] _,_ in
             Task { @MainActor in self?.runningAppsChanged() }
         }
-        runningAppsChanged()
         // Opened from the disk image: move to Applications before anything else.
         if AppLocation.needsMove(Bundle.main.bundleURL) { prepareMove();return }
         if automaticUpdates { checkForUpdates(manual:false) }
@@ -1231,13 +1262,13 @@ final class AppModel {
         }
     }
     private func showSession(_ processes:[[String:Any]]) {
-        guard !processes.isEmpty else { screen = .ready;gameWindowHidden=false;sessionLogging=nil;syncPresence(game:AppModel.runningGame());return }
+        guard !processes.isEmpty else { screen = .ready;gameWindowHidden=false;sessionLogging=nil;syncPresence(game:runningGame);return }
         readSessionLogging()
         existingName=processes.contains { $0["kind"] as? String == "game" } ? "Overwatch" : "Battle.net"
         screen = .running
         watchExits(processes)
         let game=processes.first { $0["kind"] as? String == "game" }.flatMap { ($0["pid"] as? NSNumber)?.int32Value }
-        syncPresence(game:AppModel.runningGame() ?? game)
+        syncPresence(game:runningGame ?? game)
         guard let game else { gameWindowHidden=false;return }
         Task {
             let windows=await LaunchReadiness.visibleWindows()
@@ -1485,8 +1516,8 @@ final class AppModel {
         // and input_monitoring (REC-52, REC-57).
         let fresh=loadChecked.map { Date().timeIntervalSince($0) < 15 } ?? false
         let otherApps:[String:Any]=["at_last_launch":launchLoad ?? "none","now":fresh ? macLoad.report as Any : "not_checked"]
-        // Schema 6 (1.6.0): discord_presence, the level and whether Discord took the card (DiscordPresence.swift).
-        let discord:[String:Any]=["level":discordPresenceLevel.rawValue,"allowed":presenceAllowed,"connected":discordPresence.connected]
+        // Schema 6 (1.6.0): discord_presence, the level, whether Discord answered and whether it took the last card (DiscordPresence.swift).
+        let discord:[String:Any]=["level":discordPresenceLevel.rawValue,"allowed":presenceAllowed,"connected":discordPresence.connected,"accepted":discordPresence.accepted]
         let data:[String:Any]=["schema":6,"discord_presence":discord,"game_mode":gameMode ? "on" : "off",
                                 "mouse_input":mouseInput.rawValue,"input_monitoring":InputMonitoring.access.rawValue,
                                 "other_apps":otherApps,"logging":logs,"battlenet":battleNet,"app_language":AppLanguage.current,"default_browser":browser,"main_display":display,"app_version":release?.appVersion ?? "unknown","runtime_version":state["active_runtime"] as? String ?? "not_installed","macos":ProcessInfo.processInfo.operatingSystemVersionString,"memory_gib":ProcessInfo.processInfo.physicalMemory>>30,"architecture":"arm64","free_gib":freeBytes>>30,"game_installed":gameInstalled,"display_resolution":"\(resolution.width)x\(resolution.height)","metalfx_upscaling":metalFXUpscaling ? "on" : "off","metalfx_sharpening":metalFXSharpening.rawValue,"install_location":InstallLocation.isStandard(root) ? "default" : (InstallLocation.isInternal(root) ? "other_internal" : "external"),"recent_stages":lastEvents,"last_error":failure.reportCode,"shaders":ShaderRecord.read(root:root),"shader_memory":shaderMemory]

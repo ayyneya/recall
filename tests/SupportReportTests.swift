@@ -95,7 +95,7 @@ final class AppDelegate: NSObject { @objc func forceQuit() {} }
             precondition(["allowed","denied","undecided"].contains(fields["input_monitoring"] as? String ?? ""),"\(fields)")
             // Discord (DiscordPresence.swift, schema 6): Live unless the player chose otherwise, and no Discord talked to here.
             let discord=fields["discord_presence"] as? [String:Any]
-            precondition(discord?["level"] as? String == "live" && discord?["connected"] as? Bool == false && discord?["allowed"] is Bool,"\(String(describing:discord))")
+            precondition(discord?["level"] as? String == "live" && discord?["connected"] as? Bool == false && discord?["accepted"] as? Bool == false && discord?["allowed"] is Bool,"\(String(describing:discord))")
             // Other apps (REC-5): nothing launched from this copy, and its busy note never looked.
             let other=fields["other_apps"] as? [String:Any]
             precondition(other?["at_last_launch"] as? String == "none" && other?["now"] as? String == "not_checked","\(String(describing:other))")

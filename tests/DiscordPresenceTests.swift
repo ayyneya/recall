@@ -143,6 +143,9 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         precondition(PresenceEvent.parse(logLine("#=[VC] Channel Enabled Flags 0007 -> 0005",at:t)) == nil)
         precondition(PresenceEvent.parse(logLine("#=[VC] Channel Enabled Flags 0000 -> 0005",at:t)) == nil)
         precondition(PresenceEvent.parse(logLine("#=[VC] Channel Enabled Flags 0005 -> zz",at:t)) == nil)
+        // Another flag changing while match-wide chat stays on is not the match ending.
+        precondition(PresenceEvent.parse(logLine("#=[VC] Channel Enabled Flags 0007 -> 0006",at:t)) == nil)
+        precondition(PresenceEvent.parse(logLine("#=[VC] Channel Enabled Flags 0002 -> 0003",at:t)) == nil)
         // Another player's voice (false) is told; the player's own (true) is not.
         precondition(PresenceEvent.parse(logLine(teammate,at:t)) == .member(time) && PresenceEvent.parse(logLine(yourself,at:t)) == nil)
         precondition(PresenceEvent.parse(logLine("#=[VC] MemberAdded 603564719 23f9aaaf false",at:t)) == nil)
@@ -211,8 +214,15 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         // A group that moves to the team's channel for a match, and back to the group's after it.
         tracker.apply(.channel(.party,after(1600)));tracker.apply(.member(after(1699)));tracker.apply(.channel(.team,after(1700)))
         precondition(tracker.state(at:after(1705)) == .menu && tracker.state(at:after(1710)) == .match(since:after(1700)))
-        tracker.apply(.channel(.party,after(2400)))
+        tracker.apply(.matchOver(after(2390)));tracker.apply(.channel(.party,after(2400)))
         precondition(tracker.state(at:after(2401)) == .group)
+        // The group's next match is a match again: what the last one's results said ends with its channel.
+        tracker.apply(.channel(.team,after(2420)))
+        precondition(tracker.state(at:after(2480)) == .match(since:after(2420)))
+        tracker.apply(.matchOver(after(2490)));tracker.apply(.channel(.match,after(2492)));tracker.apply(.channel(.team,after(2494)))
+        precondition(tracker.state(at:after(2540)) == .match(since:after(2494)))
+        tracker.apply(.channel(.party,after(2499)))
+        precondition(tracker.state(at:after(2499.5)) == .group)
         // A channel nobody has seen is not guessed at.
         tracker.apply(.channel(.other,after(2500)))
         precondition(tracker.state(at:after(2501)) == .unknown)
@@ -328,7 +338,8 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         Thread.sleep(forTimeInterval:0.3)
         precondition(kinds(seen.all).last == "joined","a stopped follower says nothing more")
 
-        // A log that is not there yet (the game's first run) is picked up when it appears.
+        // A log that is not there yet (the game's first run) is picked up when it appears, and so is one
+        // whose folders the game makes later, however much later: the watch moves down as each appears.
         let later=dir.appendingPathComponent("later")
         try! FileManager.default.createDirectory(at:later,withIntermediateDirectories:true)
         let newLog=later.appendingPathComponent("Overwatch.log")
@@ -338,7 +349,25 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         Thread.sleep(forTimeInterval:0.2)
         try! (logLine(ready,at:now)+"\r\n").write(to:newLog,atomically:true,encoding:.utf8)
         precondition(wait { kinds(fresh.all).contains("ready") },"created: \(kinds(fresh.all))")
-        waiting.stop()
+        let deep=dir.appendingPathComponent("Documents/Overwatch/Logs"),deepLog=deep.appendingPathComponent("Overwatch.log")
+        let made=Collected<PresenceEvent>()
+        let unmade=OverwatchLogTail(url:deepLog,queue:DispatchQueue(label:"test-tail-3")) { made.add($0) }
+        unmade.start()
+        Thread.sleep(forTimeInterval:0.2)
+        try! FileManager.default.createDirectory(at:dir.appendingPathComponent("Documents"),withIntermediateDirectories:false)
+        Thread.sleep(forTimeInterval:0.2)
+        try! FileManager.default.createDirectory(at:deep,withIntermediateDirectories:true)
+        try! (logLine(ready,at:now)+"\r\n").write(to:deepLog,atomically:true,encoding:.utf8)
+        // Within a second or two, not at a timer's next look.
+        precondition(wait(2) { kinds(made.all).contains("ready") },"folders made later: \(kinds(made.all))")
+        // Stopped from another follower's queue, it waits for its own queue rather than running on the other one.
+        let other=DispatchQueue(label:"test-tail-4")
+        _ = OverwatchLogTail(url:newLog,queue:other) { _ in }
+        other.sync { waiting.stop() }
+        append(logLine(join,at:now)+"\r\n",to:newLog)
+        Thread.sleep(forTimeInterval:0.3)
+        precondition(!kinds(fresh.all).contains("joined"),"stopped from another queue: \(kinds(fresh.all))")
+        unmade.stop()
     }
 
     static func connection() {
@@ -351,7 +380,12 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         precondition(first.opcode == DiscordFrame.frame && first.json["cmd"] as? String == "SET_ACTIVITY" && !(first.json["nonce"] as? String ?? "").isEmpty)
         let args=first.json["args"] as! [String:Any]
         precondition(args["pid"] as? Int == 4242 && (args["activity"] as! [String:Any])["details"] as? String == "In Menus")
-        precondition(wait { client.connected })
+        precondition(wait { client.connected } && !client.accepted)
+        // Discord answers each card: taken, or refused with an error.
+        server.send(fd,DiscordFrame.frame,["cmd":"SET_ACTIVITY","evt":NSNull(),"data":[:],"nonce":first.json["nonce"]!])
+        precondition(wait { client.accepted })
+        server.send(fd,DiscordFrame.frame,["cmd":"SET_ACTIVITY","evt":"ERROR","data":["code":4000,"message":"no"],"nonce":"n"])
+        precondition(wait { !client.accepted } && client.connected)
         // Discord's ping is answered, or it hangs up.
         server.send(fd,DiscordFrame.ping,["nonce":"x"])
         precondition(server.frame(fd)?.opcode == DiscordFrame.pong)
@@ -384,6 +418,11 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         client.set(["details":"A"])
         Thread.sleep(forTimeInterval:0.5)
         precondition(!client.connected)
+        // Many cards meanwhile (a whole evening's matches) still look for Discord once per wait, not once per card.
+        for n in 0..<20 { client.set(["details":"\(n)"]) }
+        let looked=client.attempts
+        Thread.sleep(forTimeInterval:1.1)
+        precondition(client.attempts-looked <= 7,"\(client.attempts-looked) looks in 1.1 s with a 0.2 s wait")
         client.stop()
     }
 

@@ -83,8 +83,9 @@ enum PresenceEvent: Equatable {
             }
         }
         if let parts=words(after:"Channel Enabled Flags ") {
-            guard parts.count == 3,parts[1] == "->",let flags=Int(parts[2],radix:16) else { return nil }
-            return flags & 0x2 != 0 ? .matchOver(time) : nil
+            guard parts.count == 3,parts[1] == "->",let before=Int(parts[0],radix:16),let after=Int(parts[2],radix:16) else { return nil }
+            // Only the change that turns match-wide chat on; another flag changing while it stays on is not the end.
+            return before & 0x2 == 0 && after & 0x2 != 0 ? .matchOver(time) : nil
         }
         if let parts=words(after:"MemberAdded ") {
             return parts.count == 5 && parts[4] == "false" ? .member(time) : nil
@@ -133,9 +134,10 @@ struct PresenceTracker {
         case .matchOver(let time): if time >= notBefore && channel == .team { over=true }
         case .member(let time): if time >= notBefore { others=true }
         case .channel(let next,let time):
-            // The same channel again keeps the first time.
+            // The same channel again keeps the first time. Another channel ends what the results said
+            // (a group goes from its own channel to the team's for each match, and back after it).
             guard time >= notBefore else { return }
-            if next != channel { channel=next;since=next == nil ? nil : time }
+            if next != channel { channel=next;since=next == nil ? nil : time;over=false }
             if next == nil { others=false;over=false }
         }
     }
@@ -252,10 +254,17 @@ final class DiscordIPC {
     private var sent:[Date]=[]
     private var timer:DispatchWorkItem?
     private var handshakeTimeout:DispatchWorkItem?
+    /// A try again is waiting: one at a time, however many cards come meanwhile.
+    private var retrying=false
+    private var tries=0
     private let lock=NSLock()
-    private var connectedFlag=false
+    private var connectedFlag=false,acceptedFlag=false
     /// Whether Discord has answered, for the support report.
     var connected:Bool { lock.lock();defer { lock.unlock() };return connectedFlag }
+    /// Whether Discord took the last card sent (it answers each one, with an error when it refuses it).
+    var accepted:Bool { lock.lock();defer { lock.unlock() };return acceptedFlag }
+    /// How many times the sockets were looked for, for the tests.
+    var attempts:Int { queue.sync { tries } }
 
     init(applicationID:String=Brand.discordApplicationID,paths:[String]?=nil,pid:Int32=getpid(),spacing:TimeInterval=0.5,burst:Int=5,window:TimeInterval=20,retry:TimeInterval=30) {
         self.applicationID=applicationID;self.pid=pid;self.spacing=spacing;self.burst=burst;self.window=window;self.retryDelay=retry
@@ -304,6 +313,7 @@ final class DiscordIPC {
     }
     private func connect() {
         guard active,descriptor < 0 else { return }
+        tries+=1
         for path in paths {
             let fd=socket(AF_UNIX,SOCK_STREAM,0)
             guard fd >= 0 else { continue }
@@ -323,6 +333,8 @@ final class DiscordIPC {
             descriptor=fd;reader=DiscordFrameReader();ready=false
             let reading=DispatchSource.makeReadSource(fileDescriptor:fd,queue:queue)
             reading.setEventHandler { [weak self] in self?.readable() }
+            // Closed only once the source has let go of it, so a new socket never gets its number meanwhile.
+            reading.setCancelHandler { close(fd) }
             reading.resume();source=reading
             guard send(DiscordFrame.handshake,["v":1,"client_id":applicationID]) else { disconnect();continue }
             // Discord answers with READY; one that does not within a few seconds is not usable.
@@ -347,10 +359,14 @@ final class DiscordIPC {
             case DiscordFrame.ping: send(DiscordFrame.pong,(try? JSONSerialization.jsonObject(with:frame.body)) ?? [String:Any]())
             case DiscordFrame.close: disconnect();scheduleRetry();return
             case DiscordFrame.frame:
-                if let message=try? JSONSerialization.jsonObject(with:frame.body) as? [String:Any],message["evt"] as? String == "READY" {
+                guard let message=try? JSONSerialization.jsonObject(with:frame.body) as? [String:Any] else { break }
+                if message["evt"] as? String == "READY" {
                     handshakeTimeout?.cancel();ready=true;pending=true
                     lock.lock();connectedFlag=true;lock.unlock()
                     flush()
+                } else if message["cmd"] as? String == "SET_ACTIVITY" {
+                    let taken=message["evt"] as? String != "ERROR"
+                    lock.lock();acceptedFlag=taken;lock.unlock()
                 }
             default: break
             }
@@ -369,16 +385,19 @@ final class DiscordIPC {
         return ok
     }
     private func disconnect() {
-        source?.cancel();source=nil
+        // The source closes the socket (its cancel handler); one is always made with it.
+        source?.cancel();source=nil;descriptor = -1
         handshakeTimeout?.cancel();handshakeTimeout=nil
-        if descriptor >= 0 { close(descriptor);descriptor = -1 }
         ready=false
-        lock.lock();connectedFlag=false;lock.unlock()
+        lock.lock();connectedFlag=false;acceptedFlag=false;lock.unlock()
     }
     private func scheduleRetry() {
-        guard active else { return }
+        guard active,!retrying else { return }
+        retrying=true
         queue.asyncAfter(deadline:.now()+retryDelay) { [weak self] in
-            guard let self,self.active,self.descriptor < 0 else { return }
+            guard let self else { return }
+            self.retrying=false
+            guard self.active,self.descriptor < 0 else { return }
             self.pending=true;self.connect()
         }
     }
@@ -400,14 +419,16 @@ final class OverwatchLogTail {
     private var fileSource:DispatchSourceFileSystemObject?
     private var folderSource:DispatchSourceFileSystemObject?
     private var stopped=true
-    /// A first launch has no Logs folder until the game makes it; looked for again for a minute.
-    private var attempts=0
-    /// Marks the queue, so stop can tell it is called from the queue's own work (the owner's, which
-    /// stops one follower to start another) and not wait for itself.
-    private static let onQueue=DispatchSpecificKey<Bool>()
+    /// What is read into, kept from one read to the next.
+    private var chunk=[UInt8](repeating:0,count:65536)
+    /// Marks the queue with its own identity, so stop can tell it is called from this queue's own work
+    /// (the owner's, which stops one follower to start another) and not wait for itself; another
+    /// follower's queue is not this one.
+    private static let onQueue=DispatchSpecificKey<ObjectIdentifier>()
+    private var onOwnQueue:Bool { DispatchQueue.getSpecific(key:Self.onQueue) == ObjectIdentifier(queue) }
     init(url:URL,queue:DispatchQueue,handler:@escaping ([PresenceEvent])->Void) {
         self.url=url;self.queue=queue;self.handler=handler
-        queue.setSpecific(key:Self.onQueue,value:true)
+        queue.setSpecific(key:Self.onQueue,value:ObjectIdentifier(queue))
     }
 
     /// The log of the Overwatch under this data folder: the Windows user's Documents, in the
@@ -422,39 +443,44 @@ final class OverwatchLogTail {
     /// From the owner's own queue it reads what is there before it returns, so the owner shows the
     /// right card at once and not an empty one first.
     func start() {
-        let begin={ self.stopped=false;self.attempts=0;self.watchFolder();self.check() }
-        if DispatchQueue.getSpecific(key:Self.onQueue) == true { begin() } else { queue.async(execute:begin) }
+        let begin={ self.stopped=false;self.watchFolder();self.check() }
+        if onOwnQueue { begin() } else { queue.async(execute:begin) }
     }
     func stop() {
         let teardown={
             self.stopped=true
-            self.fileSource?.cancel();self.fileSource=nil
             self.folderSource?.cancel();self.folderSource=nil
             self.closeFile()
         }
-        if DispatchQueue.getSpecific(key:Self.onQueue) == true { teardown() } else { queue.sync(execute:teardown) }
+        if onOwnQueue { teardown() } else { queue.sync(execute:teardown) }
     }
 
+    /// Watches the Logs folder. A first launch has none until the game makes it (which can take a
+    /// while), so until then the nearest folder above it that is there is watched, and the watch
+    /// moves down as each folder appears.
     private func watchFolder() {
-        guard folderSource == nil else { return }
-        let fd=open(url.deletingLastPathComponent().path,O_EVTONLY)
-        guard fd >= 0 else {
-            guard attempts < 12 else { return }
-            attempts+=1
-            queue.asyncAfter(deadline:.now()+5) { [weak self] in
-                guard let self,!self.stopped else { return }
-                self.watchFolder();self.check()
-            }
-            return
-        }
+        guard folderSource == nil,!stopped else { return }
+        let logs=url.deletingLastPathComponent()
+        var folder=logs,fd=open(folder.path,O_EVTONLY)
+        while fd < 0 && folder.path != "/" { folder.deleteLastPathComponent();fd=open(folder.path,O_EVTONLY) }
+        guard fd >= 0 else { return }
+        let waiting=folder.path != logs.path
         let source=DispatchSource.makeFileSystemObjectSource(fileDescriptor:fd,eventMask:.write,queue:queue)
-        source.setEventHandler { [weak self] in self?.check() }
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            if waiting { self.folderSource?.cancel();self.folderSource=nil;self.watchFolder() }
+            self.check()
+        }
         source.setCancelHandler { close(fd) }
         source.resume();folderSource=source
+        // The next folder down may have appeared before the watch was set up (the game makes them all at once).
+        if waiting,FileManager.default.fileExists(atPath:folder.appendingPathComponent(logs.pathComponents[folder.pathComponents.count]).path) {
+            source.cancel();folderSource=nil;watchFolder()
+        }
     }
     private func closeFile() {
-        fileSource?.cancel();fileSource=nil
-        if descriptor >= 0 { close(descriptor);descriptor = -1 }
+        // The file's source closes it (its cancel handler); one is always made with it.
+        fileSource?.cancel();fileSource=nil;descriptor = -1
         offset=0;partial=[]
     }
     /// The file may be new, gone or another file than the one followed.
@@ -475,6 +501,7 @@ final class OverwatchLogTail {
                 guard let self else { return }
                 if source.data.contains(.delete) || source.data.contains(.rename) { self.check() } else { self.readNew() }
             }
+            source.setCancelHandler { close(fd) }
             source.resume();fileSource=source
         }
         readNew()
@@ -484,16 +511,17 @@ final class OverwatchLogTail {
         var events:[PresenceEvent]=[]
         var status=stat()
         if fstat(descriptor,&status) == 0,status.st_size < offset { offset=0;partial=[];events.append(.reset) }
-        var chunk=[UInt8](repeating:0,count:65536)
         while true {
             let count=pread(descriptor,&chunk,chunk.count,offset)
             guard count > 0 else { break }
             offset+=off_t(count);partial+=chunk[0..<count]
-            while let end=partial.firstIndex(of:10) {
-                let line=String(decoding:partial[..<end],as:UTF8.self)
-                partial.removeSubrange(...end)
-                if let event=PresenceEvent.parse(line) { events.append(event) }
+            // Each whole line, then what is read is dropped once (not line by line, which moves the rest each time).
+            var start=partial.startIndex
+            while let end=partial[start...].firstIndex(of:10) {
+                if let event=PresenceEvent.parse(String(decoding:partial[start..<end],as:UTF8.self)) { events.append(event) }
+                start=end+1
             }
+            partial.removeSubrange(..<start)
         }
         if !events.isEmpty { handler(events) }
     }
@@ -514,8 +542,9 @@ final class DiscordPresence {
     private var shown:NSDictionary?
     private var promotion:DispatchWorkItem?
     init(level:DiscordPresenceLevel,texts:PresenceTexts,ipc:DiscordIPC=DiscordIPC()) { self.level=level;self.texts=texts;self.ipc=ipc }
-    /// Whether Discord has taken the card (for the support report).
+    /// Whether Discord has answered, and whether it took the last card (for the support report).
     var connected:Bool { ipc.connected }
+    var accepted:Bool { ipc.accepted }
     /// When a process started, from the system's own record. macOS gives no launch date for Overwatch's
     /// app (it is started by Wine, not by the Finder), and the timer on the card counts from the start.
     static func startTime(of pid:pid_t)->Date? {
@@ -535,15 +564,16 @@ final class DiscordPresence {
     }
     /// The game closed: the card comes down.
     func end() {
-        let wasRunning=queue.sync { () -> Bool in
-            guard running else { return false }
+        // All in one step on the queue, Discord's included, so a begin from another thread comes
+        // wholly before or wholly after (the connection's queue never waits for this one).
+        queue.sync {
+            guard running else { return }
             running=false
             tail?.stop();tail=nil
             promotion?.cancel();promotion=nil
             shown=nil
-            return true
+            ipc.stop()
         }
-        if wasRunning { ipc.stop() }
     }
     func update(level:DiscordPresenceLevel,texts:PresenceTexts) {
         queue.async {
