@@ -170,7 +170,7 @@ struct DiscordTab<Footer:View>: View {
         // stage grows or shrinks above it; then it rises or drops into place and fades in.
         let ride=studio.ride
         VStack(alignment:.leading,spacing:0) {
-            DiscordPageHeader(studio:studio).frame(height:home ? 0 : 46,alignment:.top).clipped().allowsHitTesting(!home)
+            DiscordPageHeader(studio:studio).frame(height:home ? 0 : DiscordPageHeader.height,alignment:.top).clipped().allowsHitTesting(!home)
             // What leaves goes at once, as in the design (a removal keeps its view on screen as long as it lasts).
             switch studio.screen {
             case .profile,.history:
@@ -206,7 +206,7 @@ extension DiscordStudio {
     /// stage, by the stage's change too while the stage stays, and not at all when the stage comes in with it (the
     /// stage's own way in takes it along).
     var ride:(header:CGFloat,page:CGFloat) {
-        let reach={ (screen:Screen)->CGFloat in screen == .home ? HeaderFold.chrome : 46 },staged:Set<Screen>=[.home,.editor]
+        let reach={ (screen:Screen)->CGFloat in screen == .home ? HeaderFold.chrome : DiscordPageHeader.height },staged:Set<Screen>=[.home,.editor]
         let header=reach(came.screen)-reach(screen)
         guard staged.contains(screen) else { return (header,header) }
         guard staged.contains(came.screen) else { return (header,0) }

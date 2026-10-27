@@ -31,13 +31,16 @@ struct DiscordEditor: View {
 /// "Settings › Discord" over the page's title. In Customize the title is the card's name, which opens My cards.
 struct DiscordPageHeader: View {
     @Bindable var studio:DiscordStudio
+    /// Its height: the design's 46, and room for seven points (not two) between the breadcrumb and the title, which sat
+    /// too close under it.
+    static let height:CGFloat=52
     var body:some View {
         FoldTime { t in
             let fold=studio.fold
             let chevron=fold.map { HeaderFold.chevron($0,at:t) } ?? 1,title=fold.map { HeaderFold.title($0,at:t) } ?? (1,0)
             // Customize's morph carries the card's title: there till it lands, from the start when it leaves.
             let carried=fold.map { $0.studio && (!$0.opening || t < StudioMorph.length) } ?? false
-            VStack(alignment:.leading,spacing:2) {
+            VStack(alignment:.leading,spacing:7) {
                 HStack(spacing:5) {
                     link(L("Settings"),.settings)
                     DesignIcon("lucide:chevron-right",size:11).foregroundStyle(DiscordColors.ink(0.55)).opacity(chevron).animation(nil,value:fold)
@@ -45,7 +48,7 @@ struct DiscordPageHeader: View {
                 }
                 titleRow(carried:carried).opacity(title.opacity).offset(y:title.rise).animation(nil,value:fold)
             }
-            .frame(height:46,alignment:.bottom)
+            .frame(height:Self.height,alignment:.bottom)
         }
         .foldClock(studio.folds)
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.35),value:studio.gallery)
