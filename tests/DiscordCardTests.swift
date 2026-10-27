@@ -7,7 +7,8 @@ import Foundation
 // Build and run:
 //   swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Brand.swift app/Sources/Localization.swift \
 //     app/Sources/DiscordPresence.swift app/Sources/CareerProfile.swift app/Sources/CareerHistory.swift \
-//     app/Sources/DiscordCardTemplate.swift app/Sources/DiscordCardCatalog.swift tests/DiscordCardTests.swift -o runtime/phase-3/discord-card-tests
+//     app/Sources/DiscordCardTemplate.swift app/Sources/DiscordCardCatalog.swift app/Sources/DiscordCardCode.swift tests/DiscordCardTests.swift \
+//     -o runtime/phase-3/discord-card-tests
 //   runtime/phase-3/discord-card-tests
 
 @main struct DiscordCardTests {
@@ -51,8 +52,8 @@ import Foundation
     static func assets(_ card:[String:Any])->[String:String] { card["assets"] as? [String:String] ?? [:] }
 
     static func main() {
-        words();defaultCard();inAMatch();groupVoice();turns();designs()
-        print("PASS: each piece's words, Full's card in the menus, in a match and in the group's voice, the lists taking turns, and the designs")
+        words();defaultCard();inAMatch();groupVoice();turns();designs();codes()
+        print("PASS: each piece's words, Full's card in the menus, in a match and in the group's voice, the lists taking turns, the designs, and their codes")
     }
 
     static func words() {
@@ -242,5 +243,77 @@ import Foundation
         var long=profile();long.identity?.title=String(repeating:"Shieldbreaker ",count:12)
         var icon=DiscordCardDesign.standard;icon.pictures=[.playerIcon]
         precondition(assets(icon.activity(inputs(profile:long)))["large_text"]?.count == 128)
+    }
+
+    /// A seeded generator, so a failing card can be found again.
+    struct Dice {
+        var seed:UInt64
+        mutating func next()->UInt64 { seed^=seed<<13;seed^=seed>>7;seed^=seed<<17;return seed }
+        mutating func int(_ count:Int)->Int { Int(next()%UInt64(count)) }
+        mutating func coin()->Bool { int(2) == 1 }
+        mutating func pick<T>(_ list:[T])->T { list[int(list.count)] }
+    }
+    static func randomHero(_ dice:inout Dice)->String? {
+        switch dice.int(4) { case 0: return nil;case 1: return "new-hero-\(dice.int(99))";default: return dice.pick(DiscordCardCode.heroes) }
+    }
+    static func randomPiece(_ dice:inout Dice)->CardPiece {
+        switch dice.int(8) {
+        case 0: return .highlights
+        case 1: return .moment(dice.pick(CardMoment.allCases))
+        case 2: return .rank(dice.pick(RankLine.allCases))
+        case 3: return .record(dice.pick(CareerPeriod.allCases),dice.pick(RecordMode.allCases),winRate:dice.coin())
+        case 4: return .hero(randomHero(&dice),dice.pick(HeroLine.allCases))
+        case 5: return .best(dice.pick(BestLine.allCases))
+        case 6: return .tonight(dice.pick(TonightLine.allCases))
+        default: return .title(dice.pick(TitleLine.allCases))
+        }
+    }
+    static func randomDesign(_ dice:inout Dice)->DiscordCardDesign {
+        let names=["","Late nights","Climber 2","Über ✨ card","한국어 카드","a-b'c.d,e!f?g&h:i(j)k/l+m#n*o_p~","🔥🔥🔥","Tank & Spank","x","ALL CAPS 99"]
+        var design=DiscordCardDesign(id:"x",name:dice.pick(names))
+        design.lineOne=(0..<dice.int(6)).map { _ in dice.pick(LineOne.allCases) }
+        design.lineTwo=(0..<dice.int(8)).map { _ in CardLine(piece:randomPiece(&dice),second:dice.coin() ? randomPiece(&dice) : nil,inMatch:dice.coin()) }
+        if dice.coin() {
+            design.pictures=(0..<dice.int(8)).map { _ in
+                dice.int(8) == 7 ? .hero(randomHero(&dice) ?? "ana") : dice.pick([CardPicture.playerIcon,.lastHero,.overwatch,.rankEmblem,.recall,.roleMain,.topHeroes])
+            }
+        }
+        design.badges=(0..<dice.int(4)).map { _ in dice.pick(CardBadge.allCases) }
+        design.timer=dice.coin() ? .session : .match
+        design.button=dice.pick([nil,SecondButton.careerProfile,.heroPage,.patchNotes])
+        design.party=dice.pick([PartyChoice.sayVoice,.addCount,.noCount])
+        design.pace=dice.coin() ? dice.pick(DiscordCardDesign.paces) : 20+dice.int(480)
+        design.rank=dice.pick([RankChoice.role(.tank),.role(.damage),.role(.support),.role(.open),.highest,.lastPlayed])
+        return design
+    }
+
+    static func codes() {
+        func back(_ design:DiscordCardDesign)->DiscordCardDesign? { DiscordCardCode.decode(DiscordCardCode.encode(design)).map { var read=$0;read.id=design.id;return read } }
+        // Every choice and the name come back exactly, for thousands of cards made at random (and the ready-made ones).
+        var dice=Dice(seed:0x9E3779B97F4A7C15)
+        for design in DiscordCardDesign.readyMade+(0..<5000).map({ _ in randomDesign(&dice) }) {
+            precondition(DiscordCardCode.fits(design),"\(design)")
+            precondition(back(design) == design,"\(design)\n\(String(describing:back(design)))\n\(DiscordCardCode.encode(design))")
+        }
+        // Short: Default is five characters; a card with three lines and a short name about fifteen.
+        precondition(DiscordCardCode.encode(.standard).count == 5,DiscordCardCode.encode(.standard))
+        var grinder=DiscordCardDesign.readyMade[3];grinder.name="Grind"
+        let code=DiscordCardCode.encode(grinder)
+        precondition(code.filter { $0 != "-" }.count <= 15 && code.allSatisfy { DiscordCardCode.alphabet.contains($0) || $0 == "-" },code)
+        // Read the way people type: any case, without the dashes or with spaces, O for 0 and I or L for 1.
+        let plain=code.replacingOccurrences(of:"-",with:"")
+        let sloppy=plain.lowercased().replacingOccurrences(of:"0",with:"o").replacingOccurrences(of:"1",with:"l")
+        precondition(back(DiscordCardCode.decode(sloppy) ?? .standard)?.lineTwo == grinder.lineTwo && DiscordCardCode.decode(plain.map { String($0) }.joined(separator:" ")) != nil)
+        // A mistyped character is refused, wherever it is and whatever it became: never another card.
+        for (position,character) in plain.enumerated() {
+            for other in DiscordCardCode.alphabet where other != character {
+                var typo=Array(plain);typo[position]=other
+                precondition(DiscordCardCode.decode(String(typo)) == nil,"\(plain) → \(String(typo))")
+            }
+        }
+        // A character missing or one too many: refused.
+        precondition(DiscordCardCode.decode(String(plain.dropLast())) == nil && DiscordCardCode.decode(String(plain.dropFirst())) == nil)
+        for bad in ["","U","hello world","0","\(plain)Z"] { precondition(DiscordCardCode.decode(bad) == nil,bad) }
+        precondition(DiscordCardCode.group("ABCDEFGHJ") == "ABCD-EFGHJ" && DiscordCardCode.group("ABCDEFGH") == "ABCD-EFGH" && DiscordCardCode.group("ABC") == "ABC")
     }
 }
