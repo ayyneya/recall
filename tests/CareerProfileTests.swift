@@ -174,25 +174,27 @@ final class FakeOverFast {
 
         // A tag that isn't one is never sent.
         precondition(look(profile,"Player",t0).0 == .invalidTag && fake.requests.isEmpty)
-        // The first look: the summary, and the whole profile to tell the next session by. No session yet.
+        // The first look: the summary, the hero list (for the pictures), and the whole profile to tell the next session
+        // by. No session yet.
         answer(updated:100,played:20,won:10)
         var (status,card)=look(profile,"Player#1234",t0)
-        precondition(fake.requests == [summaryPath,whole],"\(fake.requests)")
+        precondition(fake.requests == [summaryPath,heroes,whole],"\(fake.requests)")
+        precondition(card?.heroes["reinhardt"]?.name == "Reinhardt","the heroes' names and portraits from the first look")
         precondition(status == .found(card?.rank) && card?.rank?.role == .tank && card?.last == nil && card?.identity?.name == "Player")
         precondition(card?.page?.absoluteString == "https://overwatch.blizzard.com/en-us/career/Player-1234/" && profile.lastCode == 200)
         // Within ten minutes nothing is asked: the same answer, from what was kept.
         (status,card)=look(profile,"Player#1234",at(9))
-        precondition(fake.requests.count == 2 && card?.rank?.role == .tank)
+        precondition(fake.requests.count == 3 && card?.rank?.role == .tank)
         // Later, an unchanged profile asks the summary only.
         (status,card)=look(profile,"Player#1234",at(11))
-        precondition(fake.requests.count == 3 && card?.last == nil)
+        precondition(fake.requests.count == 4 && card?.last == nil)
         // The game ran twice meanwhile; the log saw 3 matches, then 1.
         profile.sessionEnded(PlayedRun(start:at(12),end:at(14),matches:3));profile.sessionEnded(PlayedRun(start:at(15),end:at(18),matches:1));settle(profile)
         precondition(profile.history.current.runs.map(\.matches) == [3,1],"every run goes into the history")
-        // The profile changed (three Competitive games, up a tier): the session is told, with the hero list asked for once.
+        // The profile changed (three Competitive games, up a tier): the session is told; the hero list is still fresh.
         answer(updated:200,played:23,won:12,tank:("diamond",5))
         (status,card)=look(profile,"Player#1234",at(22))
-        precondition(Array(fake.requests.suffix(3)) == [summaryPath,whole,heroes],"\(fake.requests)")
+        precondition(Array(fake.requests.suffix(2)) == [summaryPath,whole] && fake.requests.count == 6,"\(fake.requests)")
         precondition(card?.last?.competitive == Tally(played:3,won:2,lost:1) && card?.last?.other == 1 && card?.last?.hero == "reinhardt",String(describing:card?.last))
         precondition(card?.hero?.name == "Reinhardt" && card?.last?.rank?.division == "diamond" && card?.last?.promoted == true)
         // The change goes into the history at the profile's own time (when the game closed), with the totals and heroes on the card.
@@ -235,10 +237,10 @@ final class FakeOverFast {
         profile.forget();settle(profile)
         precondition(profile.history.current.changes.isEmpty && profile.history.current.season == nil && profile.history.current.runs.count == 2,"this Mac's runs stay")
         (status,card)=look(profile,"Other#5678",at(224))
-        precondition(status == .found(nil) && card?.ranks.isEmpty == true && card?.last == nil && fake.requests.count == 14)
+        precondition(status == .found(nil) && card?.ranks.isEmpty == true && card?.last == nil && fake.requests.count == 15,"its own hero list: \(fake.requests.count)")
         fake.answers["/players/Other-5678"]=fake.ok(wholeProfile(competitive:Mode(played:1,won:1),quickplay:Mode(played:1,won:1)))
         (status,card)=look(profile,"Other#5678",at(235))
-        precondition(fake.requests.count == 16 && card?.last == nil,"the totals are taken now, there being none before")
+        precondition(fake.requests.count == 17 && card?.last == nil,"the totals are taken now, there being none before")
         // Erased as Recall quits: the profile and the history go at once, without waiting on the profile's queue.
         precondition(store.object(forKey:"careerProfile") != nil && profile.history.current != CareerHistory())
         profile.eraseNow()

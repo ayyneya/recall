@@ -346,15 +346,16 @@ final class CareerProfile {
                 guard let summary=OverFast.summary(answer.body) else { finish(.unavailable,card());return }
                 let ranksBefore=record.ranks
                 record.seen=true;record.ranks=summary.ranks;record.identity=summary.identity ?? record.identity
+                // The hero list (names, portraits, roles), from the first look on: every hero picture needs it.
+                if record.heroes.isEmpty || record.heroesAt.map({ now.timeIntervalSince($0) > Self.heroesKept }) ?? true,
+                   let list=self.fetch(self.base.appendingPathComponent("heroes")),list.status == 200,let heroes=OverFast.heroes(list.body) {
+                    record.heroes=heroes;record.heroesAt=now
+                }
                 var change:ProfileChange?
                 // The profile changed: the whole of it is looked at, and the change is the last session.
                 if summary.updated != record.updated,let whole=self.fetch(self.base.appendingPathComponent("players/\(player)")),
                    whole.status == 200,let modes=OverFast.profile(whole.body) {
                     if !record.modes.isEmpty {
-                        if record.heroesAt.map({ now.timeIntervalSince($0) > Self.heroesKept }) ?? true,
-                           let list=self.fetch(self.base.appendingPathComponent("heroes")),list.status == 200,let heroes=OverFast.heroes(list.body) {
-                            record.heroes=heroes;record.heroesAt=now
-                        }
                         if var last=LastSession.between(record.modes,modes,heroes:record.heroes,matches:record.matches) {
                             // A rank moved in the same season only: a new season starts ranks over.
                             if summary.season == record.season { last.ranks(from:ranksBefore,to:summary.ranks) }
