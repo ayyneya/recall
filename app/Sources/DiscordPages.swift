@@ -451,9 +451,13 @@ extension DiscordColors {
 }
 
 extension DiscordStudio {
+    /// When the profile was last looked up, as briefly as the design says it: "just now", then "2h ago" and on.
+    var lookedUpAgo:String? {
+        lookedUp.map { Date().timeIntervalSince($0) < 60 ? L("just now") : $0.formatted(.relative(presentation:.named,unitsStyle:.narrow)) }
+    }
     var profileStatus:String {
         if lookingUp { return L("Looking up…") }
-        let ago=lookedUp.map { $0.formatted(.relative(presentation:.named)) }
+        let ago=lookedUpAgo
         switch profileState {
         case .hidden:
             if let at=lookAgainAt,at > Date() { return L("Private profile · OverFast looks again at {0}",at.formatted(date:.omitted,time:.shortened)) }

@@ -586,7 +586,7 @@ extension DiscordStudio {
         switch profileState {
         case .none: return L("Not found yet")
         case .hidden: return L("Ranks and records hidden")
-        case .shown: return lookedUp.map { L("Looked up {0}",$0.formatted(.relative(presentation:.named))) } ?? ""
+        case .shown: return lookedUpAgo.map { L("Looked up {0}",$0) } ?? ""
         }
     }
     var historyNote:String {
