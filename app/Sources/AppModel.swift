@@ -39,7 +39,24 @@ final class AppModel {
     var battleTag=UserDefaults.standard.string(forKey:"battleTag") ?? ""
     /// What the last lookup found, for Settings' line under the BattleTag.
     var careerStatus=CareerProfile.Status.none
-    @ObservationIgnored private let career=CareerProfile()
+    @ObservationIgnored private let career=CareerProfile(base:AppModel.storedServer ?? OverFast.standard,history:CareerHistoryStore(url:CareerHistoryStore.standardURL))
+    /// Settings › Discord: the OverFast the profile is looked up on; empty is the public one. One that isn't
+    /// usable (OverFast.server) is not saved.
+    var overFastServer=UserDefaults.standard.string(forKey:"overFastServer") ?? ""
+    func commitServer(_ text:String)->Bool {
+        let text=text.trimmingCharacters(in:.whitespaces)
+        guard text.isEmpty || OverFast.server(text) != nil else { return false }
+        overFastServer=text;UserDefaults.standard.set(text,forKey:"overFastServer")
+        career.use(base:OverFast.server(text) ?? OverFast.standard)
+        return true
+    }
+    nonisolated private static var storedServer:URL? { OverFast.server(UserDefaults.standard.string(forKey:"overFastServer") ?? "") }
+    /// What Recall remembers › Erase: the sessions and the profile's history go; the profile itself comes back
+    /// with the next look.
+    func eraseCareerHistory() {
+        career.erase()
+        discordPresence.update(career:nil)
+    }
     /// Settings: a BattleTag entered (Return, or the field left). It is kept and looked up once; an
     /// empty one forgets the profile and takes the rank off the card.
     func commitBattleTag(_ text:String) {
@@ -104,6 +121,8 @@ final class AppModel {
         // Another run of the game: its own timer and log, from the start.
         stopPresence()
         presencePid=game
+        // The game is back before the look after the last one: this run's own look covers it.
+        afterQuit?.cancel();afterQuit=nil
         let exit=DispatchSource.makeProcessSource(identifier:game,eventMask:.exit,queue:.main)
         exit.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.presenceGameEnded(game) } }
         exit.resume();presenceExit=exit
@@ -121,8 +140,17 @@ final class AppModel {
     private func presenceGameEnded(_ pid:pid_t) {
         guard presencePid == pid else { return }
         presenceEnded=pid;stopPresence()
+        // Blizzard updates the profile once the game has closed: one more look a little later, while Recall is
+        // open, finds the session that just ended, so the next game's card has it from the start.
+        let look=DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.afterQuit=nil;self?.lookUpCareer() } }
+        afterQuit?.cancel();afterQuit=look
+        DispatchQueue.main.asyncAfter(deadline:.now()+Self.afterQuitDelay,execute:look)
         runningAppsChanged()
     }
+    /// The look after the game closes: Blizzard's update has had time to come, and OverFast's ten-minute
+    /// cache of the look as the game opened has run out.
+    nonisolated static let afterQuitDelay:TimeInterval=12*60
+    @ObservationIgnored private var afterQuit:DispatchWorkItem?
     /// Apple's Metal Performance HUD over Overwatch (worker: launch --metal-hud). Battle.net
     /// starts the game with its own environment, so Settings changes it only while
     /// Battle.net is closed (see running).
@@ -659,8 +687,8 @@ final class AppModel {
         // never posts "launched" for the game (Wine starts it, not the Finder), but it does change its list
         // of running apps, with the game's own app in it (checked October 25). A game already running is
         // found once the status is read (refresh), when the region is known.
-        // The matches the log saw in each run of the game, toward the next session the profile tells (Full).
-        discordPresence.sessionEnded={ [career] in career.sessionEnded(matches:$0) }
+        // Each run of the game goes into the history, and its matches toward the next session the profile tells (Full).
+        discordPresence.sessionEnded={ [career] in career.sessionEnded($0) }
         runningObservation=NSWorkspace.shared.observe(\.runningApplications) { [weak self] _,_ in
             Task { @MainActor in self?.runningAppsChanged() }
         }

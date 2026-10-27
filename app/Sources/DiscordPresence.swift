@@ -719,6 +719,14 @@ final class OverwatchLogTail {
     }
 }
 
+/// One run of the game, as this Mac saw it (kept in the history, CareerHistory.swift).
+struct PlayedRun: Codable, Equatable {
+    var start:Date
+    var end:Date
+    /// The matches the log counted; nil when it wasn't followed (Normal).
+    var matches:Int?
+}
+
 /// The card for the game that is running: starts and stops with the game, follows the log (at
 /// Live), and keeps Discord's card current. Safe to call from any thread.
 final class DiscordPresence {
@@ -755,16 +763,18 @@ final class DiscordPresence {
             self.followLog();self.refresh()
         }
     }
+    /// The game closed: when this run opened and closed, and how many matches the log saw in it (nil when it
+    /// wasn't read: Normal). Called on the presence's queue; the career profile keeps the run in its history
+    /// and counts the matches toward the next session it tells.
+    var sessionEnded:((PlayedRun)->Void)?
     /// The game closed: the card comes down.
-    /// The game closed: how many matches the log saw in this run, or nil when it wasn't read (Normal).
-    /// Called on the presence's queue; the career profile counts them toward the next session it tells.
-    var sessionEnded:((Int?)->Void)?
     func end() {
         // All in one step on the queue, Discord's included, so a begin from another thread comes
         // wholly before or wholly after (the connection's queue never waits for this one).
         queue.sync {
             guard running else { return }
-            sessionEnded?(tail == nil ? nil : tracker.matches(at:Date()))
+            let now=Date()
+            sessionEnded?(PlayedRun(start:launched,end:now,matches:tail == nil ? nil : tracker.matches(at:now)))
             running=false
             tail?.stop();tail=nil
             promotion?.cancel();promotion=nil

@@ -1,12 +1,13 @@
 import Foundation
 
 // CareerProfile.swift: the BattleTag, OverFast's answers, the last session (with the log's match count),
-// when the profile is looked up (and when it is not), and the profile on the Discord card. OverFast is a
-// fake that counts what is asked; the answers are shaped like OverFast's own (October 25), with made-up
+// when the profile is looked up (and when it is not), and the profile on the Discord card. CareerHistory.swift:
+// the runs and changes kept over time, their periods, nights and moments, and the history's file. OverFast is
+// a fake that counts what is asked; the answers are shaped like OverFast's own (October 25), with made-up
 // players.
 // Build and run:
 //   swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Brand.swift app/Sources/Localization.swift \
-//     app/Sources/DiscordPresence.swift app/Sources/CareerProfile.swift tests/CareerProfileTests.swift -o runtime/phase-3/career-profile-tests
+//     app/Sources/DiscordPresence.swift app/Sources/CareerProfile.swift app/Sources/CareerHistory.swift tests/CareerProfileTests.swift -o runtime/phase-3/career-profile-tests
 //   runtime/phase-3/career-profile-tests
 
 func json(_ value:Any)->Data { try! JSONSerialization.data(withJSONObject:value) }
@@ -50,8 +51,8 @@ final class FakeOverFast {
 
 @main struct CareerProfileTests {
     static func main() {
-        battleTags();answers();lastSession();cardText();lookUps();onTheCard()
-        print("PASS: BattleTags, OverFast's answers, the last session, when the profile is looked up, and the profile on the card")
+        battleTags();answers();lastSession();cardText();lookUps();onTheCard();history();historyStore();servers()
+        print("PASS: BattleTags, OverFast's answers, the last session, when the profile is looked up, the profile on the card, the history and its file, and the servers")
     }
 
     static func battleTags() {
@@ -79,8 +80,9 @@ final class FakeOverFast {
         // The whole profile: each mode's totals, records and heroes' time.
         let modes=OverFast.profile(wholeProfile(competitive:Mode(played:98,won:45,lost:52,elims:1760,deaths:588,damage:739031,healing:594755,bests:["eliminations_most_in_game":46],heroes:["ana":10615,"juno":12822]),
                                                 quickplay:Mode(played:578,won:297,lost:281,heroes:["juno":42800])))!
-        precondition(modes["competitive"] == ModeStats(games:Tally(played:98,won:45,lost:52),heroes:["ana":10615,"juno":12822],eliminations:1760,deaths:588,damage:739031,healing:594755,bests:["eliminations_most_in_game":46]))
-        precondition(modes["quickplay"]?.games == Tally(played:578,won:297,lost:281) && modes["quickplay"]?.heroes == ["juno":42800])
+        precondition(modes["competitive"] == ModeStats(games:Tally(played:98,won:45,lost:52),heroes:["ana":10615,"juno":12822],eliminations:1760,deaths:588,damage:739031,healing:594755,bests:["eliminations_most_in_game":46],
+                                                       heroGames:["ana":Tally(played:1),"juno":Tally(played:1)]))
+        precondition(modes["quickplay"]?.games == Tally(played:578,won:297,lost:281) && modes["quickplay"]?.heroes == ["juno":42800] && modes["quickplay"]?.heroGames == ["juno":Tally(played:1)])
         precondition(OverFast.profile(json(["summary":[:],"stats":NSNull()])) == nil)
         let heroes=OverFast.heroes(heroList)!
         precondition(heroes["ana"] == CareerHero(name:"Ana",portrait:URL(string:"https://x/ana.png"),role:.support) && heroes.count == 3)
@@ -201,19 +203,24 @@ final class FakeOverFast {
         (status,card)=look(profile,"Player#1234",at(11))
         precondition(fake.requests.count == 3 && card?.last == nil)
         // The game ran twice meanwhile; the log saw 3 matches, then 1.
-        profile.sessionEnded(matches:3);profile.sessionEnded(matches:1);settle(profile)
+        profile.sessionEnded(PlayedRun(start:at(12),end:at(14),matches:3));profile.sessionEnded(PlayedRun(start:at(15),end:at(18),matches:1));settle(profile)
+        precondition(profile.history.current.runs.map(\.matches) == [3,1],"every run goes into the history")
         // The profile changed (three Competitive games, up a tier): the session is told, with the hero list asked for once.
         answer(updated:200,played:23,won:12,tank:("diamond",5))
         (status,card)=look(profile,"Player#1234",at(22))
         precondition(Array(fake.requests.suffix(3)) == [summaryPath,whole,heroes],"\(fake.requests)")
         precondition(card?.last?.competitive == Tally(played:3,won:2,lost:1) && card?.last?.other == 1 && card?.last?.hero == "reinhardt",String(describing:card?.last))
         precondition(card?.hero?.name == "Reinhardt" && card?.last?.rank?.division == "diamond" && card?.last?.promoted == true)
+        // The change goes into the history at the profile's own time (when the game closed), with the totals and heroes on the card.
+        precondition(profile.history.current.changes.map(\.at) == [Date(timeIntervalSince1970:200)] && profile.history.current.changes[0].heroes == ["reinhardt":1800],"\(profile.history.current.changes)")
+        precondition(profile.history.current.looked == at(22) && profile.history.current.seasonPeak.first?.division == "diamond")
+        precondition(card?.totals["competitive"]?.games.played == 23 && card?.heroes["reinhardt"]?.role == .tank)
         // Kept across restarts of the app: a new profile on the same settings knows it, and asks nothing yet.
         let again=CareerProfile(base:URL(string:"https://overfast.test")!,store:store,fetch:fake.fetch)
         (status,card)=look(again,"Player#1234",at(25))
         precondition(fake.requests.count == 6 && card?.last?.played == 4)
         // A session the log wasn't read in (Normal): the next session's other modes can't be told. The hero list is kept a week.
-        again.sessionEnded(matches:nil);again.sessionEnded(matches:5);settle(again)
+        again.sessionEnded(PlayedRun(start:at(26),end:at(30),matches:nil));again.sessionEnded(PlayedRun(start:at(31),end:at(35),matches:5));settle(again)
         answer(updated:300,played:24,won:12)
         (status,card)=look(again,"Player#1234",at(40))
         precondition(fake.requests.count == 8 && card?.last?.competitive.played == 1 && card?.last?.other == nil)
@@ -240,7 +247,8 @@ final class FakeOverFast {
         // Another BattleTag starts over. A whole profile that didn't come leaves the totals to be taken next time,
         // and the summary still shows.
         fake.answers["/players/Other-5678/summary"]=fake.ok(summary(updated:300,tank:nil,open:nil))
-        profile.forget()
+        profile.forget();settle(profile)
+        precondition(profile.history.current.changes.isEmpty && profile.history.current.season == nil && profile.history.current.runs.count == 2,"this Mac's runs stay")
         (status,card)=look(profile,"Other#5678",at(224))
         precondition(status == .found(nil) && card?.ranks.isEmpty == true && card?.last == nil && fake.requests.count == 14)
         fake.answers["/players/Other-5678"]=fake.ok(wholeProfile(competitive:Mode(played:1,won:1),quickplay:Mode(played:1,won:1)))
@@ -291,5 +299,118 @@ final class FakeOverFast {
         let long=PresenceCard.activity(facts:PresenceFacts(place:.menu,career:CareerLines(rankIcon:URL(string:"https://x/r.png"),ranks:String(repeating:"Tank: Emerald 1 · ",count:12))),
                                        level:.full,launched:launched,texts:texts)
         precondition(assets(long)["small_text"]!.count == 128 && JSONSerialization.isValidJSONObject(menu))
+    }
+
+    static func history() {
+        var calendar=Calendar(identifier:.gregorian);calendar.timeZone=TimeZone(identifier:"UTC")!;calendar.firstWeekday=2
+        /// October 2026, in UTC: the 26th is a Monday.
+        func day(_ date:Int,_ hour:Double)->Date { calendar.date(from:DateComponents(year:2026,month:10,day:date))!.addingTimeInterval(hour*3600) }
+        let icon=URL(string:"https://x/r.png")!
+        func rank(_ role:CareerRank.Role,_ division:String,_ tier:Int)->CareerRank { CareerRank(role:role,division:division,tier:tier,icon:icon) }
+        func change(_ at:Date,season:Int?=25,comp:Tally=Tally(),quick:Tally=Tally(),other:Int?=0,heroes:[String:Int]=[:])->ProfileChange {
+            var made=ProfileChange(at:at,season:season,session:LastSession(competitive:comp,quickplay:quick,other:other),before:[:],after:[:])
+            made.heroes=heroes
+            return made
+        }
+
+        // Divisions moved: Gold 1 to Platinum 5 is one, Gold 3 to Gold 1 two, and down is negative.
+        precondition(rank(.tank,"platinum",5).steps(from:rank(.tank,"gold",1)) == 1 && rank(.tank,"gold",1).steps(from:rank(.tank,"gold",3)) == 2)
+        precondition(rank(.tank,"gold",1).steps(from:rank(.tank,"platinum",5)) == -1)
+        // A change between two looks' totals: each hero's time, and the highest milestone passed (10, 25, 50, then every hundred).
+        let before=["competitive":ModeStats(heroes:["juno":34200,"ana":342000]),"quickplay":ModeStats(heroes:["reinhardt":3600*24])]
+        let after=["competitive":ModeStats(heroes:["juno":36720,"ana":363600]),"quickplay":ModeStats(heroes:["reinhardt":3600*51])]
+        let made=ProfileChange(at:day(26,22),season:25,session:LastSession(),before:before,after:after)
+        precondition(made.heroes == ["juno":2520,"ana":21600,"reinhardt":97200] && made.milestone == ProfileChange.Milestone(hero:"ana",hours:100),"\(made)")
+        precondition(ProfileChange(at:day(26,22),season:25,session:LastSession(),before:["quickplay":before["quickplay"]!],after:["quickplay":after["quickplay"]!]).milestone?.hours == 50)
+        precondition(ProfileChange(at:day(26,22),season:25,session:LastSession(),before:after,after:after).milestone == nil && [10,25,50,100,300].allSatisfy(ProfileChange.isMilestone) && !ProfileChange.isMilestone(150))
+
+        // The season's first and best ranks, and a change that set a new best of the season.
+        var history=CareerHistory()
+        history.looked(at:day(20,18),season:25,ranks:[rank(.tank,"gold",2)],change:nil)
+        precondition(history.first(.tank)?.tier == 2 && history.peak(.tank)?.tier == 2 && !history.seasonFollows && history.seasonSeen == day(20,18))
+        history.looked(at:day(24,23),season:25,ranks:[rank(.tank,"platinum",5),rank(.support,"gold",4)],change:change(day(24,21),comp:Tally(played:3,won:3)))
+        precondition(history.changes.last?.seasonHigh == rank(.tank,"platinum",5) && history.peak(.tank)?.division == "platinum" && history.first(.support)?.tier == 4)
+        history.looked(at:day(26,23),season:25,ranks:[rank(.tank,"gold",1),rank(.support,"gold",4)],change:change(day(26,22),comp:Tally(played:3,won:2,lost:1),heroes:["juno":3000,"ana":600]))
+        precondition(history.changes.last?.seasonHigh == nil && history.peak(.tank)?.division == "platinum" && history.first(.tank)?.division == "gold")
+        // A Monday night session first seen on Wednesday is Monday's: the profile's time dates it, not the look.
+        history.looked(at:day(28,19),season:25,ranks:[rank(.tank,"gold",1)],change:change(day(28,13),comp:Tally(played:1,won:1),quick:Tally(played:2,won:1,lost:1),other:nil,heroes:["ana":2000]))
+
+        // The periods (now: Wednesday the 28th, 20:00; the week starts on Monday): the last, today, this week, this season.
+        let now=day(28,20)
+        precondition(history.session(.last,now:now,calendar:calendar)?.competitive == Tally(played:1,won:1))
+        precondition(history.session(.today,now:now,calendar:calendar)?.quickplay == Tally(played:2,won:1,lost:1))
+        precondition(history.session(.today,now:day(26,12),calendar:calendar)?.competitive == Tally(played:3,won:2,lost:1),"Monday's, seen on Wednesday")
+        let week=history.session(.week,now:now,calendar:calendar)!
+        precondition(week.competitive == Tally(played:4,won:3,lost:1) && week.quickplay == Tally(played:2,won:1,lost:1) && week.other == nil,"\(week)")
+        precondition(week.hero == "juno","the hero played longest over the week's changes")
+        precondition(history.session(.season,now:now,calendar:calendar)?.competitive == Tally(played:7,won:6,lost:1))
+        precondition(history.session(.today,now:day(29,12),calendar:calendar) == nil && history.session(.all,now:now,calendar:calendar) == nil)
+
+        // A new season: the climb starts over, and its first look is news.
+        var next=history
+        next.looked(at:day(30,18),season:26,ranks:[rank(.tank,"silver",3)],change:change(day(30,17),season:26,comp:Tally(played:1,won:1)))
+        precondition(next.seasonFollows && next.first(.tank)?.division == "silver" && next.changes.last?.seasonHigh == nil)
+        precondition(next.session(.season,now:day(30,20),calendar:calendar)?.competitive == Tally(played:1,won:1))
+        precondition(next.newSeason(before:day(30,20)) == 26 && history.newSeason(before:now) == nil,"the first season Recall sees is no news")
+        next.ran(PlayedRun(start:day(30,19),end:day(30,21),matches:2))
+        precondition(next.newSeason(before:day(31,20)) == nil,"once a game has been played in it")
+
+        // Tonight: nights in a row (a game at half past midnight is the night before's), time this week, a comeback.
+        var runs=CareerHistory()
+        for (start,end) in [(day(19,20),day(19,23)),(day(26,21),day(26,23)),(day(27,23.5),day(28,1)),(day(29,0.5),day(29,2))] { runs.ran(PlayedRun(start:start,end:end,matches:2)) }
+        precondition(runs.nightsInARow(now:day(29,21),playing:true,calendar:calendar) == 4,"Monday, Tuesday, Wednesday (at 00:30) and tonight")
+        precondition(runs.nightsInARow(now:day(29,21),playing:false,calendar:calendar) == 0 && runs.nightsInARow(now:day(29,1),playing:true,calendar:calendar) == 3)
+        precondition(runs.playedThisWeek(now:day(29,21),current:day(29,20),calendar:calendar) == 6*3600,"2h + 1.5h + 1.5h this week, and the hour going on")
+        var span=CareerHistory();span.ran(PlayedRun(start:day(25,23),end:day(26,1),matches:1))
+        precondition(span.playedThisWeek(now:day(26,12),current:nil,calendar:calendar) == 3600,"only the part inside this week")
+        precondition(runs.away(before:day(23,20)) == 4*24*3600-3*3600 && runs.away(before:day(27,20)) == nil && CareerHistory().away(before:now) == nil)
+        // A change is news until a game opens after the one it came from.
+        var news=history
+        precondition(news.news(before:day(28,21))?.at == day(28,13))
+        news.ran(PlayedRun(start:day(28,14),end:day(28,16),matches:1))
+        precondition(news.news(before:day(28,21)) == nil && news.news(before:day(28,14)) != nil)
+        // The rank is not shown once matches were played after a look more than two days old; a break with none keeps it.
+        var stale=CareerHistory();stale.looked(at:day(20,12),season:25,ranks:[rank(.tank,"gold",1)],change:nil)
+        precondition(!stale.rankStale(now:day(23,12)))
+        stale.ran(PlayedRun(start:day(21,20),end:day(21,21),matches:0))
+        precondition(!stale.rankStale(now:day(23,12)),"a run with no match changes nothing")
+        stale.ran(PlayedRun(start:day(22,20),end:day(22,21),matches:3))
+        precondition(stale.rankStale(now:day(23,12)) && !stale.rankStale(now:day(22,11)))
+        // Another BattleTag: the profile's history goes, this Mac's runs stay. Old runs and changes leave after about a year.
+        var other=history;other.ran(PlayedRun(start:day(1,20),end:day(1,21),matches:1));other.forgetProfile()
+        precondition(other.changes.isEmpty && other.seasonPeak.isEmpty && other.looked == nil && other.runs.count == 1)
+        other.ran(PlayedRun(start:day(1,20).addingTimeInterval(CareerHistory.kept+3600),end:day(1,21).addingTimeInterval(CareerHistory.kept+3600),matches:1))
+        precondition(other.runs.count == 1)
+    }
+
+    static func historyStore() {
+        let folder=FileManager.default.temporaryDirectory.appendingPathComponent("career-history-tests-\(getpid())")
+        defer { try? FileManager.default.removeItem(at:folder) }
+        let file=folder.appendingPathComponent("org.overwatch2mac.launcher/career-history.json")
+        let start=Date(timeIntervalSince1970:1_800_000_000)
+        let store=CareerHistoryStore(url:file)
+        precondition(store.current == CareerHistory() && !FileManager.default.fileExists(atPath:file.path))
+        store.update { $0.ran(PlayedRun(start:start,end:start.addingTimeInterval(3600),matches:4)) }
+        // Written as plain JSON (dates as text), and read back by the next launch.
+        let text=String(decoding:try! Data(contentsOf:file),as:UTF8.self)
+        precondition(text.contains("2027-01-15T08:00:00Z"),text)
+        precondition(CareerHistoryStore(url:file).current.runs == [PlayedRun(start:start,end:start.addingTimeInterval(3600),matches:4)])
+        // A file that isn't one is a fresh start.
+        try! Data("not json".utf8).write(to:file)
+        precondition(CareerHistoryStore(url:file).current == CareerHistory())
+        // Erase: the file goes.
+        store.erase()
+        precondition(store.current == CareerHistory() && !FileManager.default.fileExists(atPath:file.path))
+        // In memory only (the tests, a preview): nothing is written.
+        let memory=CareerHistoryStore(url:nil)
+        memory.update { $0.ran(PlayedRun(start:start,end:start,matches:nil)) }
+        precondition(memory.current.runs.count == 1)
+    }
+
+    static func servers() {
+        precondition(OverFast.server("https://overfast.example.com")?.absoluteString == "https://overfast.example.com")
+        precondition(OverFast.server(" http://localhost:8000/ ")?.host == "localhost" && OverFast.server("http://127.0.0.1:8080") != nil)
+        // The BattleTag never travels unencrypted to another machine, nor to something that isn't a server.
+        for bad in ["http://overfast.example.com","ftp://x","overfast.example.com","https://x/?q=1","","https://"] { precondition(OverFast.server(bad) == nil,bad) }
     }
 }

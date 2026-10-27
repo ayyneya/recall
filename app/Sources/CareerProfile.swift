@@ -7,9 +7,11 @@ import Foundation
 // game closed), so what the card tells is the session before this one, looked up as the game opens.
 // The game's log adds what the profile can't: how many matches that session had, so the ones outside
 // Competitive and Quick Play (Arcade, custom games) are counted too.
-// Only the BattleTag is sent, and only at fixed moments: as the game opens and once when a BattleTag
-// is entered, at most one lookup in ten minutes (OverFast's own cache time), and never before a wait
-// OverFast asked for. The whole profile (about half a megabyte) is asked for only when it changed.
+// Only the BattleTag is sent, and only at fixed moments: as the game opens, once about twelve minutes
+// after it closes (when Blizzard has updated the profile; never during a match), and once when a
+// BattleTag is entered; at most one lookup in ten minutes (OverFast's own cache time), and never before
+// a wait OverFast asked for. The whole profile (about half a megabyte) is asked for only when it changed.
+// Each change is also kept, dated, in the history (CareerHistory.swift), for the card's periods.
 
 /// A BattleTag as the player types it ("Name#1234"), and as OverFast takes it ("Name-1234"). Checked
 /// here first, so a tag OverFast would refuse is never sent.
@@ -48,6 +50,8 @@ struct ModeStats: Codable, Equatable {
     var eliminations=0,deaths=0,damage=0,healing=0
     /// The profile's "best in a game" records ("eliminations_most_in_game": 46).
     var bests:[String:Int]=[:]
+    /// Each hero's games, for its win rate; nil in what an older Recall kept.
+    var heroGames:[String:Tally]?
 }
 
 /// Who the player is in the game: what the profile's header shows.
@@ -150,6 +154,10 @@ struct CareerCard: Equatable {
     var hero:CareerHero?
     /// The player's career page on Blizzard's site, for the card's button.
     var page:URL?
+    /// The profile's totals by mode (all time: records, bests, each hero's time and games), and the heroes
+    /// as OverFast lists them (names, roles, portraits).
+    var totals:[String:ModeStats]=[:]
+    var heroes:[String:CareerHero]=[:]
     /// The rank shown: the role the last session's competitive games were in, or else the best one.
     var rank:CareerRank? {
         if let role=last?.role,(last?.competitive.played ?? 0) > 0,let rank=ranks.first(where:{ $0.role == role }) { return rank }
@@ -197,9 +205,13 @@ enum OverFast {
             var stats=ModeStats(games:Tally(played:game["games_played"] ?? 0,won:game["games_won"] ?? 0,lost:game["games_lost"] ?? 0),
                                 eliminations:combat["eliminations"] ?? 0,deaths:combat["deaths"] ?? 0,damage:combat["hero_damage_done"] ?? 0,
                                 healing:assists["healing_done"] ?? 0,bests:values("all-heroes","best"))
+            var heroGames:[String:Tally]=[:]
             for hero in career.keys where hero != "all-heroes" {
-                if let time=values(hero,"game")["time_played"],time > 0 { stats.heroes[hero]=time }
+                let game=values(hero,"game")
+                if let time=game["time_played"],time > 0 { stats.heroes[hero]=time }
+                if let played=game["games_played"],played > 0 { heroGames[hero]=Tally(played:played,won:game["games_won"] ?? 0,lost:game["games_lost"] ?? 0) }
             }
+            if !heroGames.isEmpty { stats.heroGames=heroGames }
             modes[mode]=stats
         }
         return modes
@@ -220,6 +232,13 @@ enum OverFast {
         if let after=json["retry_after"] as? Double,after > 0 { return now.addingTimeInterval(after) }
         return now.addingTimeInterval(90*60)
     }
+    /// Settings › Discord: an OverFast the player runs themselves. https, or http on this Mac only; nil for
+    /// anything else (the BattleTag never travels unencrypted to another machine).
+    static func server(_ text:String)->URL? {
+        guard let url=URL(string:text.trimmingCharacters(in:.whitespaces)),let host=url.host,!host.isEmpty,url.query == nil,url.fragment == nil else { return nil }
+        guard url.scheme == "https" || (url.scheme == "http" && ["localhost","127.0.0.1","::1"].contains(host)) else { return nil }
+        return url
+    }
     /// Images go to Discord only as https links.
     private static func secure(_ value:Any?)->URL? {
         (value as? String).flatMap(URL.init(string:)).flatMap { $0.scheme == "https" ? $0 : nil }
@@ -228,7 +247,8 @@ enum OverFast {
 
 /// Looks the player's profile up when it is time to, and keeps what it learned (in this Mac's
 /// settings: the BattleTag's OverFast form, the profile's totals and header, the hero list, and the
-/// log's match count since the totals were taken; never anything else).
+/// log's match count since the totals were taken; never anything else). The changes over time go to
+/// the history's own file.
 final class CareerProfile {
     enum Status: Equatable {
         case none
@@ -268,14 +288,18 @@ final class CareerProfile {
         var code:Int?
     }
     private let queue=DispatchQueue(label:"org.overwatch2mac.career-profile",qos:.utility)
-    private let base:URL
+    private var base:URL
     private let store:UserDefaults
     private let key:String
     private let fetch:Fetch
-    init(base:URL=OverFast.standard,store:UserDefaults = .standard,key:String="careerProfile",fetch:Fetch?=nil) {
-        self.base=base;self.store=store;self.key=key
+    /// What the looks found over time, and the game's runs (CareerHistory.swift).
+    let history:CareerHistoryStore
+    init(base:URL=OverFast.standard,store:UserDefaults = .standard,key:String="careerProfile",history:CareerHistoryStore=CareerHistoryStore(url:nil),fetch:Fetch?=nil) {
+        self.base=base;self.store=store;self.key=key;self.history=history
         self.fetch=fetch ?? CareerProfile.request
     }
+    /// Settings › Discord: another OverFast (one the player runs themselves), from the next look on.
+    func use(base:URL) { queue.async { self.base=base } }
     /// The last answer's HTTP code, for the support report (never the BattleTag).
     var lastCode:Int? { queue.sync { record()?.code } }
 
@@ -292,7 +316,7 @@ final class CareerProfile {
                 var page=URLComponents(string:"https://overwatch.blizzard.com/en-us/career/")!
                 page.path+=player+"/"
                 return CareerCard(identity:record.identity,ranks:record.ranks,season:record.season,last:record.last,
-                                  hero:record.last?.hero.flatMap { record.heroes[$0] },page:page.url)
+                                  hero:record.last?.hero.flatMap { record.heroes[$0] },page:page.url,totals:record.modes,heroes:record.heroes)
             }
             if let wait=record.waitUntil,now < wait { finish(record.notPublic ? .notPublic(until:wait) : .unavailable,card());return }
             if let asked=record.asked,now.timeIntervalSince(asked) < Self.fresh,!record.notPublic {
@@ -307,6 +331,7 @@ final class CareerProfile {
                 guard let summary=OverFast.summary(answer.body) else { finish(.unavailable,card());return }
                 let ranksBefore=record.ranks
                 record.seen=true;record.ranks=summary.ranks;record.identity=summary.identity ?? record.identity
+                var change:ProfileChange?
                 // The profile changed: the whole of it is looked at, and the change is the last session.
                 if summary.updated != record.updated,let whole=self.fetch(self.base.appendingPathComponent("players/\(player)")),
                    whole.status == 200,let modes=OverFast.profile(whole.body) {
@@ -319,11 +344,14 @@ final class CareerProfile {
                             // A rank moved in the same season only: a new season starts ranks over.
                             if summary.season == record.season { last.ranks(from:ranksBefore,to:summary.ranks) }
                             record.last=last
+                            // Kept with the profile's own time (when the game closed), not the look's.
+                            change=ProfileChange(at:Date(timeIntervalSince1970:TimeInterval(summary.updated)),season:summary.season,session:last,before:record.modes,after:modes)
                         }
                     }
                     record.modes=modes;record.updated=summary.updated;record.matches=0
                 }
                 record.season=summary.season
+                self.history.update { $0.looked(at:now,season:summary.season,ranks:summary.ranks,change:change) }
                 finish(.found(card()?.rank),card())
             case 404:
                 record.notPublic=true;record.waitUntil=OverFast.notFoundUntil(answer.body,now:now)
@@ -337,17 +365,22 @@ final class CareerProfile {
             }
         }
     }
-    /// A game session ended: the matches the log saw in it, or nil when the log wasn't followed (Normal),
-    /// after which the next session's other modes can't be told.
-    func sessionEnded(matches:Int?) {
+    /// A run of the game ended: it goes into the history (BattleTag or not), and its matches, or nil when the log
+    /// wasn't followed (Normal, after which the next session's other modes can't be told), count toward the
+    /// next session the profile tells.
+    func sessionEnded(_ run:PlayedRun) {
         queue.async {
+            self.history.update { $0.ran(run) }
             guard var record=self.record() else { return }
-            record.matches=matches.flatMap { count in record.matches.map { $0+count } }
+            record.matches=run.matches.flatMap { count in record.matches.map { $0+count } }
             self.save(record)
         }
     }
-    /// The BattleTag changed or was cleared: what was kept for the old one goes.
-    func forget() { queue.async { self.store.removeObject(forKey:self.key) } }
+    /// The BattleTag changed or was cleared: what was kept for the old one goes (this Mac's runs stay).
+    func forget() { queue.async { self.store.removeObject(forKey:self.key);self.history.update { $0.forgetProfile() } } }
+    /// What Recall remembers › Erase: the history and the profile both. The ranks and all-time records come
+    /// back with the next look; the sessions don't.
+    func erase() { queue.async { self.store.removeObject(forKey:self.key);self.history.erase() } }
 
     private func record()->Record? { store.data(forKey:key).flatMap { try? JSONDecoder().decode(Record.self,from:$0) } }
     private func save(_ record:Record) { store.set(try? JSONEncoder().encode(record),forKey:key) }
