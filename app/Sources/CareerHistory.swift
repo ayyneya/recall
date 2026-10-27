@@ -99,6 +99,15 @@ struct CareerHistory: Codable, Equatable {
         }
         looked=time
     }
+    /// The runs since the last change the profile told (all of them before one was), whose records come with the
+    /// next look that finds it changed. A run the profile changed during belongs to that change.
+    var waiting:[PlayedRun] { let last=changes.last?.at ?? .distantPast;return runs.filter { $0.start > last } }
+    /// The runs a change covers: those overlapping the time since the change before it, so a run the profile changed
+    /// during (Blizzard updates it after a match, maybe before the game closes) counts for it.
+    func runs(for change:ProfileChange)->[PlayedRun] {
+        let before=changes.last { $0.at < change.at }?.at ?? .distantPast
+        return runs.filter { $0.start <= change.at && $0.end > before }
+    }
     /// The BattleTag changed: what the old profile said goes, and this Mac's runs stay.
     mutating func forgetProfile() {
         changes=[];season=nil;seasonSeen=nil;seasonFollows=false;seasonFirst=[];seasonPeak=[];looked=nil

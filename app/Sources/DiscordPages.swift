@@ -58,10 +58,10 @@ struct ProfilePage: View {
             }
             .frame(width:40,height:40).background(DiscordColors.tile).clipShape(RoundedRectangle(cornerRadius:10))
             VStack(alignment:.leading,spacing:2) {
-                Text(verbatim:studio.battleTag).designFont(15,.bold).foregroundStyle(DiscordColors.body)
+                TagName(tag:studio.battleTag,page:studio.profile?.page)
                 Text(studio.profileStatus).designFont(11.5).foregroundStyle(DiscordColors.ink(0.55)).lineLimit(1)
             }.frame(maxWidth:.infinity,alignment:.leading)
-            PageButton(title:L("Look again"),small:true) { studio.actions.lookAgain() }.disabled(studio.lookingUp)
+            LookAgainButton(studio:studio)
             PageButton(title:L("Change"),small:true) { studio.tagDraft=studio.battleTag;studio.tagError=false;studio.tagEditing=true }
         }
         .padding(.leading,12).padding(.trailing,10).frame(minHeight:40,idealHeight:62,maxHeight:62)
@@ -108,21 +108,64 @@ struct SectionLabel: View {
             .padding(.horizontal,4).padding(.bottom,-4)
     }
 }
-/// A page's quiet button (Look again, Change, Done), or a red one (Remove).
+/// The BattleTag, a link to the player's profile on Blizzard's site once it's found (where the same records show).
+private struct TagName: View {
+    let tag:String
+    let page:URL?
+    @State private var inside=false
+    var body:some View {
+        let name=Text(verbatim:tag).designFont(15,.bold).foregroundStyle(DiscordColors.body)
+        if let page {
+            Button { NSWorkspace.shared.open(page) } label: {
+                HStack(spacing:4) {
+                    name.underline(inside,color:DiscordColors.ink(0.45))
+                    DesignIcon("lucide:arrow-up-right",size:13).foregroundStyle(DiscordColors.ink(inside ? 0.75 : 0.4))
+                }.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).onHover { inside=$0 }
+            .designTip(L("Your profile on Blizzard’s site, where these records come from"))
+            .accessibilityHint(L("Your profile on Blizzard’s site, where these records come from"))
+        } else { name }
+    }
+}
+/// Look again: busy while a look is on its way, then waiting out the time a look can't learn anything new in
+/// (OverFast keeps its answer ten minutes, or longer when it asked), with what's left counting down.
+private struct LookAgainButton: View {
+    @Bindable var studio:DiscordStudio
+    var body:some View {
+        TimelineView(.periodic(from:.now,by:1)) { context in
+            let left=studio.lookAgainReady(context.date).map { $0.timeIntervalSince(context.date) }
+            PageButton(title:L("Look again"),small:true,busy:studio.lookingUp,after:left.map { Duration.seconds(max(1,$0.rounded(.up))).formatted(.time(pattern:.minuteSecond)) }) {
+                studio.actions.lookAgain()
+            }
+            .disabled(studio.lookingUp || left != nil)
+        }
+    }
+}
+/// A page's quiet button (Look again, Change, Done), or a red one (Remove). A small one can show a spinner while it
+/// works and something after its title.
 struct PageButton: View {
     let title:String
     var small=false
     var danger=false
+    var busy=false
+    var after:String?=nil
     let action:()->Void
     @State private var inside=false
+    @Environment(\.isEnabled) private var enabled
     var body:some View {
         Button(action:action) {
-            Text(title).designFont(small || danger ? 12 : 13,small || danger ? .semibold : .medium)
-                .foregroundStyle(danger ? Color(red:1,green:110/255,blue:100/255) : small ? DiscordColors.bright.opacity(0.88) : DiscordColors.bright)
-                .padding(.horizontal,small || danger ? 10 : 16).frame(height:small || danger ? 26 : 30)
-                .background(danger ? Color(red:1,green:69/255,blue:58/255).opacity(inside ? 0.18 : 0.12) : DiscordColors.veil(small ? (inside ? 0.13 : 0.08) : 0.1),
-                            in:RoundedRectangle(cornerRadius:small || danger ? 7 : 15))
-                .contentShape(Rectangle())
+            HStack(spacing:6) {
+                if busy { ProgressView().controlSize(.mini).tint(DiscordColors.bright) }
+                Text(title).designFont(small || danger ? 12 : 13,small || danger ? .semibold : .medium)
+                if let after { Text(verbatim:after).designFont(12,.semibold).monospacedDigit().opacity(0.55) }
+            }
+            .foregroundStyle(danger ? Color(red:1,green:110/255,blue:100/255) : small ? DiscordColors.bright.opacity(0.88) : DiscordColors.bright)
+            .opacity(enabled ? 1 : 0.6)
+            .padding(.horizontal,small || danger ? 10 : 16).frame(height:small || danger ? 26 : 30)
+            .background(danger ? Color(red:1,green:69/255,blue:58/255).opacity(inside ? 0.18 : 0.12) : DiscordColors.veil(small ? (inside ? 0.13 : 0.08) : 0.1),
+                        in:RoundedRectangle(cornerRadius:small || danger ? 7 : 15))
+            .contentShape(Rectangle())
         }.buttonStyle(.plain).onHover { inside=$0 }
     }
 }
@@ -465,6 +508,12 @@ extension DiscordStudio {
     var lookedUpAgo:String? {
         lookedUp.map { Date().timeIntervalSince($0) < 60 ? L("just now") : $0.formatted(.relative(presentation:.named,unitsStyle:.narrow)) }
     }
+    /// When Look again can learn something: ten minutes after the last look (OverFast keeps its answer that long), or
+    /// after the wait OverFast asked for a private profile; nil when it can now.
+    func lookAgainReady(_ now:Date)->Date? {
+        let ready=profileState == .hidden ? lookAgainAt : lookedUp.map { $0.addingTimeInterval(CareerProfile.fresh) }
+        return ready.flatMap { $0 > now ? $0 : nil }
+    }
     var profileStatus:String {
         if lookingUp { return L("Looking up…") }
         let ago=lookedUpAgo
@@ -541,10 +590,10 @@ extension DiscordStudio {
 
     /// The sessions kept, newest first: each profile change with the runs it covers, and the runs not yet looked at.
     func sessionRows()->[SessionRow] {
-        var rows:[SessionRow]=[],previous=Date.distantPast,id=0
+        var rows:[SessionRow]=[],id=0
         let profileHeroes=profile?.heroes ?? [:]
         for change in history.changes.sorted(by:{ $0.at < $1.at }) {
-            let runs=history.runs.filter { $0.end > previous && $0.end <= change.at }
+            let runs=history.runs(for:change)
             let hero=change.session.hero.flatMap { profileHeroes[$0] }
             var what=change.session.summary
             if let name=hero?.name { what=L("{0} · {1}",what,name) }
@@ -557,12 +606,16 @@ extension DiscordStudio {
             else { result=L("Same rank") }
             rows.append(SessionRow(id:id,when:Self.when(runs.last?.end ?? change.at),what:what,result:result,resultMove:change.session.competitive.played == 0 ? 0 : steps,
                                    image:hero?.portrait,fromLog:!runs.isEmpty,fromProfile:true))
-            id+=1;previous=change.at
+            id+=1
         }
-        for run in history.runs where run.end > previous {
+        // Their records come with a look, at Full and Customize with a BattleTag; a run without a match has none.
+        let looks=(level == .full || level == .custom) && !battleTag.isEmpty
+        for run in history.waiting {
             let matches=run.matches.map { $0 == 1 ? L("1 match") : L("{0} matches",String($0)) } ?? L("Played")
-            rows.append(SessionRow(id:id,when:Self.when(run.end),what:battleTag.isEmpty ? matches : L("{0} · records after the next look",matches),
-                                   result:battleTag.isEmpty ? "" : L("Waiting"),image:nil,fromLog:true,fromProfile:false))
+            let waits=looks && run.matches != 0
+            let what=run.matches == 0 ? L("No matches") : !waits ? matches
+                : nextLook.map { L("{0} · records at {1}",matches,$0.formatted(date:.omitted,time:.shortened)) } ?? L("{0} · records after the next look",matches)
+            rows.append(SessionRow(id:id,when:Self.when(run.end),what:what,result:waits ? L("Waiting") : "",image:nil,fromLog:true,fromProfile:false))
             id+=1
         }
         return rows.reversed()

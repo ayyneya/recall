@@ -30,6 +30,8 @@ import Observation
     var history=CareerHistory()
     var lookedUp:Date?
     var lookingUp=false
+    /// The look Recall makes a while after the game closes, while that's to come.
+    var nextLook:Date?
     /// A private profile: OverFast looks at it again only after this, so Look again learns nothing sooner.
     var lookAgainAt:Date?
     var texts=PresenceTexts.app

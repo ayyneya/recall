@@ -73,21 +73,22 @@ final class AppModel {
     /// the profile and takes the rank off the card.
     func commitBattleTag(_ text:String) {
         let tag=text.trimmingCharacters(in:.whitespaces)
-        guard tag != battleTag else { lookUpCareer();return }
+        guard tag != battleTag else { lookUpCareer(asked:true);return }
         battleTag=tag;UserDefaults.standard.set(tag,forKey:"battleTag")
         career.forget()
         discordPresence.update(career:nil,tagName:tagName)
         let studio=discordStudio
         // The old tag's look, if one is on its way, is not waited for (lookUpCareer drops its answer).
         studio.battleTag=tag;studio.profile=nil;studio.profileState = .none;studio.lookedUp=nil;studio.lookAgainAt=nil;studio.lookingUp=false
-        lookUpCareer()
+        lookUpCareer(asked:true)
         refreshStudio()
     }
-    /// Full and Custom: the profile is looked up as the game opens, a while after it closes, when a BattleTag is
-    /// entered, and on Look again. CareerProfile keeps its own pace (one lookup in ten minutes, and any wait
-    /// OverFast asked for), so calling this more often sends nothing more.
-    private func lookUpCareer() {
-        guard usesProfile,!battleTag.isEmpty,presenceAllowed else { return }
+    /// Full and Custom: the profile is looked up as the game opens, a while after it closes, and as Recall opens with
+    /// sessions waiting for it. At any level, when the player asks: a BattleTag entered, Look again. CareerProfile
+    /// keeps its own pace (one lookup in ten minutes, and any wait OverFast asked for), so calling this more often
+    /// sends nothing more.
+    private func lookUpCareer(asked:Bool=false) {
+        guard usesProfile || asked,!battleTag.isEmpty,presenceAllowed else { return }
         let tag=battleTag
         discordStudio.lookingUp=true
         career.lookUp(tag:tag) { [weak self] status,card in
@@ -113,7 +114,7 @@ final class AppModel {
         studio.actions=DiscordStudio.Actions(level:{ [weak self] in self?.discordPresenceLevel=$0 },
                                              power:{ [weak self] in self?.setPresencePower($0) },
                                              battleTag:{ [weak self] in self?.commitBattleTag($0) },
-                                             lookAgain:{ [weak self] in self?.lookUpCareer() },
+                                             lookAgain:{ [weak self] in self?.lookUpCareer(asked:true) },
                                              erase:{ [weak self] in self?.eraseCareerHistory() },
                                              export:{ [weak self] in self?.exportSessions() })
         discordPresence.update(design:studio.design)
@@ -178,6 +179,7 @@ final class AppModel {
     /// known once the worker's status has been read (until then it is only the Mac's own suggestion).
     private var presenceAllowed:Bool { presencePower && statusRead && showsDiscord && !isPreview }
     @ObservationIgnored private var statusRead=false
+    @ObservationIgnored private var lookedAtLaunch=false
     /// The game process the card was started for, and macOS's report of its end (a process dispatch source).
     @ObservationIgnored private var presencePid:pid_t?
     @ObservationIgnored private var presenceExit:DispatchSourceProcess?
@@ -204,7 +206,7 @@ final class AppModel {
         stopPresence()
         presencePid=game
         // The game is back before the look after the last one: this run's own look covers it.
-        afterQuit?.cancel();afterQuit=nil
+        afterQuit?.cancel();afterQuit=nil;discordStudio.nextLook=nil
         let exit=DispatchSource.makeProcessSource(identifier:game,eventMask:.exit,queue:.main)
         exit.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.presenceGameEnded(game) } }
         exit.resume();presenceExit=exit
@@ -227,9 +229,10 @@ final class AppModel {
         refreshStudio()
         // Blizzard updates the profile once the game has closed: one more look a little later, while Recall is
         // open, finds the session that just ended, so the next game's card has it from the start.
-        let look=DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.afterQuit=nil;self?.lookUpCareer() } }
+        let look=DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.afterQuit=nil;self?.discordStudio.nextLook=nil;self?.lookUpCareer() } }
         afterQuit?.cancel();afterQuit=look
         DispatchQueue.main.asyncAfter(deadline:.now()+Self.afterQuitDelay,execute:look)
+        if usesProfile && !battleTag.isEmpty { discordStudio.nextLook=Date().addingTimeInterval(Self.afterQuitDelay) }
         runningAppsChanged()
     }
     /// The look after the game closes: Blizzard's update has had time to come, and OverFast's ten-minute
@@ -772,6 +775,11 @@ final class AppModel {
         }
         // The region is known now: the Discord card follows it (and support's switch) from here.
         statusRead=true;checkPresence()
+        // Sessions the profile hasn't told yet (Recall closed before the look after them): a look as Recall opens.
+        if !lookedAtLaunch {
+            lookedAtLaunch=true
+            if AppModel.careerHistory.current.waiting.contains(where:{ $0.matches != 0 }) { lookUpCareer() }
+        }
         freeBytes=(status["free_bytes"] as? NSNumber)?.uint64Value ?? 0
         // Match Finder's "available" figure, which includes purgeable storage.
         if let available=try? root.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,available>0 {

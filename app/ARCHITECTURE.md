@@ -451,9 +451,10 @@ beaten, and a rank that moved (in the same season). The log adds what the profil
 the game reports its matches (`PresenceTracker.matches`, each counted once as a line shows it held), and
 the matches since the totals were taken, less the profile's, are the ones in other modes (Arcade, custom
 games); a session the log wasn't read in makes that unknown until the next totals. It asks at most once
-in ten minutes (OverFast's cache time): as the game opens, twelve minutes after it quits (Blizzard's update has
-come by then, so the next game's card has the session from the start), when a BattleTag is entered and on Your
-profile's Look again; never again before a wait OverFast gave (its not-found `next_check_at`, about 90 minutes,
+in ten minutes (OverFast's cache time): at Full and Customize, as the game opens, twelve minutes after it quits
+(Blizzard's update has come by then, so the next game's card has the session from the start) and as Recall opens
+with runs still waiting for one; at any level, when a BattleTag is entered and on Your profile's Look again, which
+counts down what's left of the ten minutes; never again before a wait OverFast gave (its not-found `next_check_at`, about 90 minutes,
 or a 429/503's Retry-After), and a 500 or no answer waits for the next opening.
 The card is a design (`DiscordCardTemplate.swift`, its words in `DiscordCardCatalog.swift`): Line 1, Line 2,
 the large picture and the small badge each hold a list, and a list of more than one takes turns, all on one

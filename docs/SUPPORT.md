@@ -200,9 +200,10 @@ session or a whole day, week or season went (matches and their results, the hero
 records), your heroes and hours, your best games, and a button to your career page that others can open.
 For that, and only with a BattleTag entered (Settings › Discord › Your profile), Recall sends your BattleTag
 to OverFast (overfast-api.tekrop.fr), an open-source service that reads public career profiles: as Overwatch
-opens, about twelve minutes after it quits, when you enter the BattleTag and when you choose Look again, at
-most once in ten minutes, the whole profile only when it changed, and OverFast's hero list (names and
-portraits) about once a week. Nothing else goes with it, and OverFast keeps the profiles it looks up. Your
+opens, about twelve minutes after it quits (if Recall is still open; otherwise as Recall next opens), when you
+enter the BattleTag and when you choose Look again, at most once in ten minutes (Look again counts down the
+rest), the whole profile only when it changed, and OverFast's hero list (names and portraits) from the first
+look and then about once a week. Nothing else goes with it, and OverFast keeps the profiles it looks up. Your
 profile must be public (in Overwatch: Options › Social › Career Profile Visibility). Your profile page in
 Settings lists everything Recall reads from it and where it shows on the card.
 

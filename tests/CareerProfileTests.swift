@@ -270,6 +270,21 @@ final class FakeOverFast {
         precondition(ProfileChange(at:day(26,22),season:25,session:LastSession(),before:["quickplay":before["quickplay"]!],after:["quickplay":after["quickplay"]!]).milestone?.hours == 50)
         precondition(ProfileChange(at:day(26,22),season:25,session:LastSession(),before:after,after:after).milestone == nil && [10,25,50,100,300].allSatisfy(ProfileChange.isMilestone) && !ProfileChange.isMilestone(150))
 
+        // Which runs a change covers: those overlapping the time since the change before, so a run the profile changed
+        // during (after a match, before the game closed) counts for it, and only runs that started after the last change
+        // wait for the next look.
+        var runsAndChanges=CareerHistory()
+        runsAndChanges.ran(PlayedRun(start:day(25,12),end:day(25,13.2),matches:2))
+        runsAndChanges.ran(PlayedRun(start:day(25,18),end:day(25,19),matches:3))
+        runsAndChanges.ran(PlayedRun(start:day(25,20),end:day(25,20.5),matches:0))
+        precondition(runsAndChanges.waiting.count == 3,"no change told yet: every run waits")
+        runsAndChanges.looked(at:day(25,21),season:25,ranks:[],change:change(day(25,13)))
+        precondition(runsAndChanges.runs(for:runsAndChanges.changes[0]).map(\.matches) == [2],"the run the profile changed during is its")
+        precondition(runsAndChanges.waiting.map(\.matches) == [3,0],"the runs after it wait")
+        runsAndChanges.looked(at:day(25,22),season:25,ranks:[],change:change(day(25,19.5)))
+        // The first run went on after the first change: it counts for both.
+        precondition(runsAndChanges.runs(for:runsAndChanges.changes[1]).map(\.matches) == [2,3] && runsAndChanges.waiting.map(\.matches) == [0])
+
         // The season's first and best ranks, and a change that set a new best of the season.
         var history=CareerHistory()
         history.looked(at:day(20,18),season:25,ranks:[rank(.tank,"gold",2)],change:nil)
