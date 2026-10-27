@@ -124,6 +124,29 @@ extension CoordinateSpaceProtocol where Self == NamedCoordinateSpace {
     /// Discord's tab, for what's drawn across it (LevelFlow).
     static var discordTab:NamedCoordinateSpace { .named("discordTab") }
 }
+/// Discord's tab is dark, as its design is (its light look is still to come): while it shows, the whole app turns
+/// dark, every window crossfading, and back as it goes (SettingsSheet).
+@MainActor enum DiscordDark {
+    /// The app's own appearance from before (nil: the system's), while the tab keeps it dark.
+    private static var before:NSAppearance??
+    static func set(_ on:Bool) {
+        guard on != (before != nil) else { return }
+        let next=on ? NSAppearance(named:.darkAqua) : before ?? nil
+        before=on ? .some(NSApp.appearance) : nil
+        let dark={ (appearance:NSAppearance?) in
+            appearance.map { $0.bestMatch(from:[.darkAqua,.aqua]) == .darkAqua } ?? (UserDefaults.standard.string(forKey:"AppleInterfaceStyle") == "Dark")
+        }
+        // A Mac that's dark already stays as it is.
+        if dark(next) != dark(NSApp.effectiveAppearance) {
+            for window in NSApp.windows where window.isVisible {
+                guard let layer=window.contentView?.superview?.layer ?? window.contentView?.layer else { continue }
+                let fade=CATransition();fade.type = .fade;fade.duration=0.35;fade.timingFunction=CAMediaTimingFunction(name:.easeInEaseOut)
+                layer.add(fade,forKey:"discordDark")
+            }
+        }
+        NSApp.appearance=next
+    }
+}
 /// Settings › Discord as one column: its own page (DiscordHome), Customize and the two pages. Going to Customize or a
 /// page folds Settings' title and tabs away (SettingsSheet) as the breadcrumb opens here, and the card's stage
 /// stays where it is, only changing height.

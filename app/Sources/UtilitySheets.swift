@@ -104,7 +104,8 @@ struct SettingsSheet:View {
             .frame(width:LauncherStyle.sheetWidth,height:LauncherStyle.largeSheetHeight)
             .tint(.primary).background { LauncherBackground(settings:true) }
             // Settings opens on Discord's own tab next time, not inside Customize; an erase waiting to be undone happens now.
-            .onDisappear { model.discordStudio.closePage() }
+            .onDisappear { model.discordStudio.closePage();DiscordDark.set(false) }
+            .onChange(of:tab == .discord,initial:true) { _,discord in DiscordDark.set(discord) }
             .onReceive(NotificationCenter.default.publisher(for:NSApplication.didChangeScreenParametersNotification)) { _ in
                 main=MainDisplay.current
                 model.refreshDisplay()
