@@ -139,7 +139,7 @@ extension CoordinateSpaceProtocol where Self == NamedCoordinateSpace {
 @MainActor enum DiscordDark {
     /// The app's own appearance from before (nil: the system's), while the tab keeps it dark.
     private static var before:NSAppearance??
-    static func set(_ on:Bool) {
+    static func set(_ on:Bool,fade:Bool=true) {
         guard on != (before != nil) else { return }
         let next=on ? NSAppearance(named:.darkAqua) : before ?? nil
         before=on ? .some(NSApp.appearance) : nil
@@ -147,7 +147,7 @@ extension CoordinateSpaceProtocol where Self == NamedCoordinateSpace {
             appearance.map { $0.bestMatch(from:[.darkAqua,.aqua]) == .darkAqua } ?? (UserDefaults.standard.string(forKey:"AppleInterfaceStyle") == "Dark")
         }
         // A Mac that's dark already stays as it is.
-        if dark(next) != dark(NSApp.effectiveAppearance) {
+        if fade && dark(next) != dark(NSApp.effectiveAppearance) {
             for window in NSApp.windows where window.isVisible {
                 guard let layer=window.contentView?.superview?.layer ?? window.contentView?.layer else { continue }
                 let fade=CATransition();fade.type = .fade;fade.duration=0.35;fade.timingFunction=CAMediaTimingFunction(name:.easeInEaseOut)
