@@ -127,7 +127,9 @@ import Observation
     var restored=false
     var undoLeft=0
     var exported=false
-    var hoverSeen=UserDefaults.standard.bool(forKey:"discordHoverSeen") { didSet { UserDefaults.standard.set(hoverSeen,forKey:"discordHoverSeen") } }
+    /// Customize's "Point at pictures" goes once a tooltip on the card has shown, till Recall opens again, as the design's
+    /// does (kept for good, it was gone after the first look).
+    var hoverSeen=false
     /// Earned lines the player has unlocked with their key.
     var unlocked=Set(UserDefaults.standard.stringArray(forKey:"discordUnlocked") ?? []) { didSet { UserDefaults.standard.set(Array(unlocked).sorted(),forKey:"discordUnlocked") } }
     /// The design's tooltips for these pages.
