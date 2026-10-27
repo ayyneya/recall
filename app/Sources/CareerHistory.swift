@@ -21,6 +21,8 @@ struct ProfileChange: Codable, Equatable {
     var session:LastSession
     /// Seconds each hero was played, both modes together (OverFast's keys).
     var heroes:[String:Int]=[:]
+    /// Divisions the last session's rank moved (LastSession.rank); nil when it didn't.
+    var rankSteps:Int?
     /// A rank above the role's best so far this season (set as the change is kept; a season's first ranks are none).
     var seasonHigh:CareerRank?
     var milestone:Milestone?

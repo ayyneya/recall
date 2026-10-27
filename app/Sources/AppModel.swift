@@ -39,7 +39,9 @@ final class AppModel {
     var battleTag=UserDefaults.standard.string(forKey:"battleTag") ?? ""
     /// What the last lookup found, for Settings' line under the BattleTag.
     var careerStatus=CareerProfile.Status.none
-    @ObservationIgnored private let career=CareerProfile(base:AppModel.storedServer ?? OverFast.standard,history:CareerHistoryStore(url:CareerHistoryStore.standardURL))
+    @ObservationIgnored private let career=CareerProfile(base:AppModel.storedServer ?? OverFast.standard,history:AppModel.careerHistory)
+    /// What Recall remembers (CareerHistory.swift): the profile writes it, the card reads it.
+    nonisolated private static let careerHistory=CareerHistoryStore(url:CareerHistoryStore.standardURL)
     /// Settings › Discord: the OverFast the profile is looked up on; empty is the public one. One that isn't
     /// usable (OverFast.server) is not saved.
     var overFastServer=UserDefaults.standard.string(forKey:"overFastServer") ?? ""
@@ -55,7 +57,7 @@ final class AppModel {
     /// with the next look.
     func eraseCareerHistory() {
         career.erase()
-        discordPresence.update(career:nil)
+        discordPresence.update(career:nil,tagName:tagName)
     }
     /// Settings: a BattleTag entered (Return, or the field left). It is kept and looked up once; an
     /// empty one forgets the profile and takes the rank off the card.
@@ -64,7 +66,7 @@ final class AppModel {
         guard tag != battleTag else { return }
         battleTag=tag;UserDefaults.standard.set(tag,forKey:"battleTag")
         career.forget();careerStatus = .none
-        discordPresence.update(career:nil)
+        discordPresence.update(career:nil,tagName:tagName)
         lookUpCareer()
     }
     /// Full: the profile is looked up as the game opens and when a BattleTag is entered. CareerProfile
@@ -77,7 +79,7 @@ final class AppModel {
             Task { @MainActor in
                 guard let self else { return }
                 self.careerStatus=status
-                self.discordPresence.update(career:card.map(CareerLines.init))
+                self.discordPresence.update(career:card,tagName:self.tagName)
             }
         }
     }
@@ -92,7 +94,9 @@ final class AppModel {
     nonisolated static func runningGame()->pid_t? {
         NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == gameBundleID }?.processIdentifier
     }
-    @ObservationIgnored private let discordPresence=DiscordPresence(level:AppModel.storedPresenceLevel,texts:AppModel.presenceTexts())
+    @ObservationIgnored private let discordPresence=DiscordPresence(level:AppModel.storedPresenceLevel,texts:AppModel.presenceTexts(),history:AppModel.careerHistory)
+    /// The BattleTag's name (before the #), for line 1 at Full while the profile has none.
+    private var tagName:String? { BattleTag.playerID(battleTag).flatMap { $0.split(separator:"-").first.map(String.init) } }
     /// Discord is blocked in mainland China, and previews never touch the real Discord. The region is
     /// known once the worker's status has been read (until then it is only the Mac's own suggestion).
     private var presenceAllowed:Bool { (UserDefaults.standard.object(forKey:"discordPresence") as? Bool ?? true) && statusRead && showsDiscord && !isPreview }

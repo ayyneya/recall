@@ -346,6 +346,7 @@ final class CareerProfile {
                             record.last=last
                             // Kept with the profile's own time (when the game closed), not the look's.
                             change=ProfileChange(at:Date(timeIntervalSince1970:TimeInterval(summary.updated)),season:summary.season,session:last,before:record.modes,after:modes)
+                            if let moved=last.rank,let old=ranksBefore.first(where:{ $0.role == moved.role }) { change?.rankSteps=moved.steps(from:old) }
                         }
                     }
                     record.modes=modes;record.updated=summary.updated;record.matches=0
@@ -439,53 +440,5 @@ extension LastSession {
         let number={ (value:Int) in value.formatted(.number) }
         return healing > damage ? L("{0} eliminations, {1} deaths, {2} healing",number(eliminations),number(deaths),number(healing))
                                 : L("{0} eliminations, {1} deaths, {2} damage",number(eliminations),number(deaths),number(damage))
-    }
-    /// "⬆️ Tank: up to Emerald 1".
-    var rankNews:String? {
-        rank.map { (promoted ? "⬆️ " : "⬇️ ")+$0.label(promoted ? L("up to {0}",$0.name) : L("down to {0}",$0.name)) }
-    }
-    /// "New best: 46 eliminations in a game".
-    var bestNews:String? {
-        guard let best else { return nil }
-        let value=best.value.formatted(.number)
-        let record:String
-        switch best.key {
-        case "eliminations_most_in_game": record=L("{0} eliminations in a game",value)
-        case "all_damage_done_most_in_game": record=L("{0} damage in a game",value)
-        case "healing_done_most_in_game": record=L("{0} healing in a game",value)
-        case "final_blows_most_in_game": record=L("{0} final blows in a game",value)
-        case "solo_kills_most_in_game": record=L("{0} solo kills in a game",value)
-        case "kill_streak_best": record=L("a kill streak of {0}",value)
-        case "multikill_best": record=L("{0} kills in one multikill",value)
-        default: return nil
-        }
-        return "🏅 "+L("New best: {0}",record)
-    }
-}
-extension CareerLines {
-    /// The card's words from what the profile says.
-    init(_ card:CareerCard) {
-        self.init()
-        let ranks=card.ranks.sorted { CareerRank.Role.allCases.firstIndex(of:$0.role)! < CareerRank.Role.allCases.firstIndex(of:$1.role)! }
-        if let rank=card.rank {
-            rankIcon=rank.icon
-            // The shown rank first, then the others, each with its role's sign, on one line: Discord's hover text
-            // drops line breaks. Only this season's: a role not placed has none.
-            let signs:[CareerRank.Role:String]=[.tank:"🛡️",.damage:"⚔️",.support:"➕",.open:"👥"]
-            self.ranks=([rank]+ranks.filter { $0 != rank }).map { signs[$0.role]!+" "+$0.label() }.joined(separator:" · ")
-        }
-        name=card.identity?.name
-        // The large picture: the hero played longest in the last session, with what was done on all heroes
-        // (the profile's totals don't say which hero did what); or else the player's own icon.
-        if let hero=card.hero,let portrait=hero.portrait {
-            picture=portrait
-            pictureText=([L("Most played last session: {0}",hero.name)]+[card.last?.stats.map { L("All heroes: {0}",$0) }].compactMap { $0 }).joined(separator:" · ")
-        } else if let identity=card.identity,let avatar=identity.avatar {
-            picture=avatar
-            pictureText=[identity.name,identity.title].compactMap { $0 }.joined(separator:" · ")
-        }
-        // Line 2 in the menus, the first that there is: a rank that moved, a record beaten, the session.
-        news=[card.last?.rankNews,card.last?.bestNews,card.last.map { "🎮 "+$0.summary }].compactMap { $0 }
-        if let page=card.page { buttonLabel=L("Career Profile");self.page=page }
     }
 }

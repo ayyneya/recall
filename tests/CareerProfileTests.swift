@@ -7,7 +7,8 @@ import Foundation
 // players.
 // Build and run:
 //   swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Brand.swift app/Sources/Localization.swift \
-//     app/Sources/DiscordPresence.swift app/Sources/CareerProfile.swift app/Sources/CareerHistory.swift tests/CareerProfileTests.swift -o runtime/phase-3/career-profile-tests
+//     app/Sources/DiscordPresence.swift app/Sources/CareerProfile.swift app/Sources/CareerHistory.swift \
+//     app/Sources/DiscordCardTemplate.swift app/Sources/DiscordCardCatalog.swift tests/CareerProfileTests.swift -o runtime/phase-3/career-profile-tests
 //   runtime/phase-3/career-profile-tests
 
 func json(_ value:Any)->Data { try! JSONSerialization.data(withJSONObject:value) }
@@ -51,8 +52,8 @@ final class FakeOverFast {
 
 @main struct CareerProfileTests {
     static func main() {
-        battleTags();answers();lastSession();cardText();lookUps();onTheCard();history();historyStore();servers()
-        print("PASS: BattleTags, OverFast's answers, the last session, when the profile is looked up, the profile on the card, the history and its file, and the servers")
+        battleTags();answers();lastSession();cardText();lookUps();history();historyStore();servers()
+        print("PASS: BattleTags, OverFast's answers, the last session and its words, when the profile is looked up, the history and its file, and the servers")
     }
 
     static func battleTags() {
@@ -142,23 +143,6 @@ final class FakeOverFast {
         precondition(LastSession(competitive:Tally(played:1),eliminations:38,deaths:9,damage:4000,healing:14032).stats == "38 eliminations, 9 deaths, 14,032 healing")
         precondition(LastSession(competitive:Tally(played:1),eliminations:20,deaths:5,damage:12500,healing:0).stats == "20 eliminations, 5 deaths, 12,500 damage")
         precondition(LastSession(other:1).stats == nil)
-        precondition(LastSession(rank:tank,promoted:true).rankNews == "⬆️ Tank: up to Emerald 1" && LastSession(rank:support).rankNews == "⬇️ Support: down to Gold 3")
-        precondition(LastSession(best:CareerBest(key:"eliminations_most_in_game",value:46)).bestNews == "🏅 New best: 46 eliminations in a game")
-        precondition(LastSession(best:CareerBest(key:"kill_streak_best",value:12)).bestNews == "🏅 New best: a kill streak of 12" && LastSession(best:CareerBest(key:"unknown",value:1)).bestNews == nil)
-        // All of it on the card's lines: the rank shown first, then the others, a line each with its role's sign
-        // (this season's only); the hero, or the player; the player's name for line 1.
-        let session=LastSession(competitive:Tally(played:2,won:1,lost:1),other:1,role:.support,eliminations:38,deaths:9,damage:4000,healing:14032,best:CareerBest(key:"eliminations_most_in_game",value:46))
-        let card=CareerCard(identity:CareerIdentity(name:"Player",title:"Shieldbreaker",endorsement:4,avatar:URL(string:"https://x/avatar.png")),
-                            ranks:[tank,support],season:25,last:session,hero:CareerHero(name:"Ana",portrait:URL(string:"https://x/ana.png"),role:.support),
-                            page:URL(string:"https://overwatch.blizzard.com/en-us/career/Player-1234/"))
-        let lines=CareerLines(card)
-        precondition(lines.rankIcon == icon && lines.ranks == "➕ Support: Gold 3 · 🛡️ Tank: Emerald 1" && lines.name == "Player")
-        precondition(lines.picture == URL(string:"https://x/ana.png") && lines.pictureText == "Most played last session: Ana · All heroes: 38 eliminations, 9 deaths, 14,032 healing")
-        precondition(lines.news == ["🏅 New best: 46 eliminations in a game","🎮 Comp 1–1 · 1 other"])
-        precondition(lines.buttonLabel == "Career Profile" && lines.page?.absoluteString == "https://overwatch.blizzard.com/en-us/career/Player-1234/")
-        // No session yet: the player's own icon, name and title (the endorsement level isn't for the card).
-        let first=CareerLines(CareerCard(identity:card.identity,ranks:[tank],season:25))
-        precondition(first.picture == URL(string:"https://x/avatar.png") && first.pictureText == "Player · Shieldbreaker" && first.news.isEmpty)
     }
 
     /// Waits for one lookup's answer.
@@ -254,51 +238,6 @@ final class FakeOverFast {
         fake.answers["/players/Other-5678"]=fake.ok(wholeProfile(competitive:Mode(played:1,won:1),quickplay:Mode(played:1,won:1)))
         (status,card)=look(profile,"Other#5678",at(235))
         precondition(fake.requests.count == 16 && card?.last == nil,"the totals are taken now, there being none before")
-    }
-
-    static func onTheCard() {
-        let texts=PresenceTexts(menu:"In Menus",match:"In Match",voice:"In Group Voice",badge:"Playing on Mac with Recall")
-        let launched=Date(timeIntervalSince1970:1_792_000_000)
-        let career=CareerLines(rankIcon:URL(string:"https://x/emerald.png"),ranks:"🛡️ Tank: Emerald 1 · 👥 6v6: Emerald 1",name:"Player",picture:URL(string:"https://x/ana.png"),
-                               pictureText:"Most played last session: Ana · All heroes: 38 eliminations, 9 deaths, 14,032 healing",
-                               news:["Tank: up to Emerald 1","New best: 46 eliminations in a game","Comp 2–1"],
-                               buttonLabel:"Career Profile",page:URL(string:"https://overwatch.blizzard.com/en-us/career/Player-1234/"))
-        func card(_ place:PresenceState,_ level:DiscordPresenceLevel,voice:GroupVoice?=nil,competitive:Bool?=nil)->[String:Any] {
-            PresenceCard.activity(facts:PresenceFacts(place:place,voice:voice,competitive:competitive,career:career),level:level,launched:launched,texts:texts)
-        }
-        func assets(_ card:[String:Any])->[String:String] { card["assets"] as? [String:String] ?? [:] }
-        // Menus at Full: the rank in the badge's place with all ranks in its hover; the hero as the large picture;
-        // line 2 the first piece of news (a rank that moved comes before a record and the session); the button.
-        let menu=card(.menu,.full)
-        precondition(assets(menu)["small_image"] == "https://x/emerald.png" && assets(menu)["small_text"] == "🛡️ Tank: Emerald 1 · 👥 6v6: Emerald 1 · Playing on Mac with Recall")
-        precondition(assets(menu)["large_image"] == "https://x/ana.png" && assets(menu)["large_text"] == "Most played last session: Ana · All heroes: 38 eliminations, 9 deaths, 14,032 healing")
-        precondition(menu["details"] as? String == "Player · In Menus" && menu["state"] as? String == "Tank: up to Emerald 1")
-        precondition((menu["buttons"] as? [[String:String]]) == [["label":"Career Profile","url":"https://overwatch.blizzard.com/en-us/career/Player-1234/"]])
-        // The group's voice comes first.
-        precondition(card(.menu,.full,voice:GroupVoice(count:2,channel:"P",party:"p"))["state"] as? String == "In Group Voice")
-        // In a match: nothing more on line 2 (the log can't tell its mode, the profile not its result yet), the badge,
-        // no picture (it would read as the hero being played now).
-        let match=card(.match(since:launched),.full)
-        precondition(match["state"] == nil && assets(match)["small_image"] == Brand.discordBadge.absoluteString && assets(match)["large_image"] == nil)
-        precondition(match["buttons"] != nil,"the profile's button is no claim about the match")
-        // A source that knows the match is competitive (a screen reader, one day) puts the rank on it.
-        precondition(assets(card(.match(since:launched),.full,competitive:true))["small_image"] == "https://x/emerald.png")
-        precondition(assets(card(.match(since:launched),.full,competitive:false))["small_image"] == Brand.discordBadge.absoluteString)
-        // Where the log can't say where the player is: neither the profile's news nor its pictures.
-        let unknown=card(.unknown,.full)
-        precondition(unknown["details"] as? String == "Player" && card(.match(since:launched),.full)["details"] as? String == "Player · In Match")
-        precondition(unknown["state"] == nil && assets(unknown)["large_image"] == nil && assets(unknown)["small_image"] == Brand.discordBadge.absoluteString)
-        // Live and Normal show nothing from the profile.
-        let live=card(.match(since:launched),.live)
-        precondition(live["state"] == nil && live["buttons"] == nil && card(.menu,.live)["state"] == nil && assets(card(.menu,.live))["large_image"] == nil)
-        precondition(card(.menu,.normal)["assets"] == nil)
-        // Full with nothing found yet is Live.
-        let none=PresenceCard.activity(facts:PresenceFacts(place:.menu),level:.full,launched:launched,texts:texts)
-        precondition(assets(none)["small_image"] == Brand.discordBadge.absoluteString && none["state"] == nil && none["buttons"] == nil)
-        // Discord's limit on a line or hover text: 128 characters.
-        let long=PresenceCard.activity(facts:PresenceFacts(place:.menu,career:CareerLines(rankIcon:URL(string:"https://x/r.png"),ranks:String(repeating:"Tank: Emerald 1 · ",count:12))),
-                                       level:.full,launched:launched,texts:texts)
-        precondition(assets(long)["small_text"]!.count == 128 && JSONSerialization.isValidJSONObject(menu))
     }
 
     static func history() {

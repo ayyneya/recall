@@ -5,7 +5,8 @@ import Darwin
 // the real Overwatch.log's, with the ids left out; Discord is a fake listener on a temporary socket.
 // Build and run:
 //   swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Brand.swift app/Sources/Localization.swift \
-//     app/Sources/DiscordPresence.swift tests/DiscordPresenceTests.swift -o runtime/phase-3/discord-presence-tests
+//     app/Sources/DiscordPresence.swift app/Sources/CareerProfile.swift app/Sources/CareerHistory.swift \
+//     app/Sources/DiscordCardTemplate.swift app/Sources/DiscordCardCatalog.swift tests/DiscordPresenceTests.swift -o runtime/phase-3/discord-presence-tests
 //   runtime/phase-3/discord-presence-tests
 
 final class Collected<T> {

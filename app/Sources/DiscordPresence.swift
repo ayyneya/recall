@@ -288,8 +288,8 @@ struct PresenceTracker {
 }
 
 /// What is known about the player, from each source on its own: the game's log (where they are, who is
-/// in the group's voice) and the career profile (Full). The card is made from these alone, so another
-/// source (a screen reading the game, say, behind its own switch) adds or corrects facts here and
+/// in the group's voice). The card is made from these alone (with the profile and the history at Full), so
+/// another source (a screen reading the game, say, behind its own switch) adds or corrects facts here and
 /// nowhere else, and each source keeps to its own file.
 struct PresenceFacts: Equatable {
     var place:PresenceState = .unknown
@@ -297,27 +297,6 @@ struct PresenceFacts: Equatable {
     /// Whether the match is a competitive one, when a source can tell: the log can't (a match's mode is
     /// in no line), so for now nothing sets it; a screen-reading source would.
     var competitive:Bool?
-    var career:CareerLines?
-}
-
-/// What the card says from the career profile (Full), already in the app's language.
-struct CareerLines: Equatable {
-    /// The rank's icon, which takes the badge's place, and the ranks' words for its hover text ("🛡️ Tank:
-    /// Emerald 1 · 👥 6v6: Emerald 1").
-    var rankIcon:URL?
-    var ranks:String?
-    /// The player's name in the game, before where they are on line 1 ("pyxee · In Menus").
-    var name:String?
-    /// The large picture in the menus: the last session's hero ("Most played last session: Ana · All heroes:
-    /// 38 eliminations, 9 deaths, 14,032 healing") or the player's own icon ("pyxee · Shieldbreaker").
-    var picture:URL?
-    var pictureText:String?
-    /// Line 2 in the menus, in the order the card prefers them: a rank that moved, a record beaten, the
-    /// last session ("🎮 Comp 2–1 · 1 other").
-    var news:[String]=[]
-    /// A button to the player's career page (others see Discord's buttons; the player doesn't).
-    var buttonLabel:String?
-    var page:URL?
 }
 
 /// The words on the card, in the app's language (the caller passes them in through L).
@@ -336,49 +315,20 @@ enum PresenceCard {
     static func fit(_ text:String)->String { text.count <= 128 ? text : String(text.prefix(127))+"…" }
     /// Overwatch's largest group: six (6v6).
     static let largestGroup=6
-    /// The card Discord shows for the state. Normal is what Discord shows a PC player; Live adds the
-    /// state line and the badge; Full adds the profile. Times are Unix seconds. The player's own Discord
-    /// decides whether anyone sees it.
-    ///
-    /// Line 2 holds one thing, the first there is: the group's voice (with its party size); in the menus at
-    /// Full, a rank that moved, a record beaten, then the last session. In a match it says nothing more: the
-    /// log can't tell its mode, nor the profile its result until the game is quit.
+    /// The card Discord shows at Normal and Live (Full's is its design's: DiscordCardTemplate.swift). Normal is
+    /// what Discord shows a PC player; Live adds where the player is, the match's own timer, the group's voice
+    /// and the badge. Times are Unix seconds. The player's own Discord decides whether anyone sees it.
     static func activity(facts:PresenceFacts,level:DiscordPresenceLevel,launched:Date,texts:PresenceTexts)->[String:Any] {
-        let state=facts.place,voice=facts.voice
         var card:[String:Any]=["type":0,"timestamps":["start":Int(launched.timeIntervalSince1970)]]
         guard level != .normal else { return card }
-        switch state {
+        switch facts.place {
         case .unknown: break
         case .menu: card["details"]=texts.menu
         case .match(let since): card["details"]=texts.match;card["timestamps"]=["start":Int(since.timeIntervalSince1970)]
         }
         // The party's size is the voice chat's: the line says so, since the log never tells the group's own.
-        if let voice { card["state"]=texts.voice;card["party"]=["id":voice.party,"size":[min(voice.count,largestGroup),largestGroup]] }
-        let career=level == .full ? facts.career : nil
-        // Full: the player's name in the game first on line 1.
-        if let name=career?.name { card["details"]=(card["details"] as? String).map { name+" · "+$0 } ?? name }
-        // Full shows the profile where it belongs: in the menus, and in a match only when it is known to be a
-        // competitive one. A Quick Play or Arcade match with a rank on it would read as Competitive, and the
-        // log alone can't tell them apart.
-        let inMenus=state == .menu
-        var competitiveMatch=false
-        if case .match = state { competitiveMatch=facts.competitive == true }
-        if voice == nil,inMenus,let news=career?.news.first { card["state"]=news }
-        // The rank's icon takes the badge's place, and the ranks' words come first in the hover text.
-        var assets:[String:String]
-        if inMenus || competitiveMatch,let icon=career?.rankIcon,let ranks=career?.ranks {
-            assets=["small_image":icon.absoluteString,"small_text":fit(ranks+" · "+texts.badge)]
-        } else {
-            assets=["small_image":Brand.discordBadge.absoluteString,"small_text":texts.badge]
-        }
-        // In the menus, the last session's hero (or the player's icon) is the large picture. Never in a match,
-        // where it would read as the hero being played now.
-        if inMenus,let picture=career?.picture {
-            assets["large_image"]=picture.absoluteString
-            if let text=career?.pictureText,text.count >= 2 { assets["large_text"]=fit(text) }
-        }
-        card["assets"]=assets
-        if let label=career?.buttonLabel,let page=career?.page { card["buttons"]=[["label":String(label.prefix(32)),"url":page.absoluteString]] }
+        if let voice=facts.voice { card["state"]=texts.voice;card["party"]=["id":voice.party,"size":[min(voice.count,largestGroup),largestGroup]] }
+        card["assets"]=["small_image":Brand.discordBadge.absoluteString,"small_text":texts.badge]
         return card
     }
 }
@@ -740,9 +690,16 @@ final class DiscordPresence {
     private var tail:OverwatchLogTail?
     private var running=false
     private var shown:NSDictionary?
-    private var career:CareerLines?
+    /// Full: the profile, the BattleTag's name, the design (Default), and what Recall remembers.
+    private var career:CareerCard?
+    private var tagName:String?
+    private var design=DiscordCardDesign.standard
+    private let history:CareerHistoryStore
+    /// The next refresh: a team channel becoming a match, or the card's next turn.
     private var promotion:DispatchWorkItem?
-    init(level:DiscordPresenceLevel,texts:PresenceTexts,ipc:DiscordIPC=DiscordIPC()) { self.level=level;self.texts=texts;self.ipc=ipc }
+    init(level:DiscordPresenceLevel,texts:PresenceTexts,history:CareerHistoryStore=CareerHistoryStore(url:nil),ipc:DiscordIPC=DiscordIPC()) {
+        self.level=level;self.texts=texts;self.history=history;self.ipc=ipc
+    }
     /// Whether Discord has answered, and whether it took the last card (for the support report).
     var connected:Bool { ipc.connected }
     var accepted:Bool { ipc.accepted }
@@ -782,9 +739,10 @@ final class DiscordPresence {
             ipc.stop()
         }
     }
-    /// What the career profile says (Full), whenever it was looked up.
-    func update(career:CareerLines?) {
-        queue.async { self.career=career;self.refresh() }
+    /// What the career profile says (Full), whenever it was looked up; nil while there's none to show
+    /// (no BattleTag, a private or unknown profile). The BattleTag's name stands in for the profile's on line 1.
+    func update(career:CareerCard?,tagName:String?) {
+        queue.async { self.career=career;self.tagName=tagName;self.refresh() }
     }
     func update(level:DiscordPresenceLevel,texts:PresenceTexts) {
         queue.async {
@@ -811,11 +769,19 @@ final class DiscordPresence {
     private func refresh() {
         guard running else { return }
         let now=Date()
-        let facts=PresenceFacts(place:tracker.state(at:now),voice:tracker.groupVoice,career:career)
-        let card=PresenceCard.activity(facts:facts,level:level,launched:launched,texts:texts)
+        let facts=PresenceFacts(place:tracker.state(at:now),voice:tracker.groupVoice)
+        var wait=tracker.nextChange(at:now)
+        let card:[String:Any]
+        if level == .full {
+            let inputs=CardInputs(place:facts.place,voice:facts.voice,competitive:facts.competitive,profile:career,history:history.current,tagName:tagName,
+                                  launched:launched,matches:tracker.matches(at:now),now:now,texts:texts)
+            card=design.activity(inputs)
+            // The card's lists take their next turn: one update then (Discord takes one every few seconds at most).
+            if let turn=design.nextTurn(inputs)?.timeIntervalSince(now) { wait=min(wait ?? turn,turn) }
+        } else { card=PresenceCard.activity(facts:facts,level:level,launched:launched,texts:texts) }
         if shown != card as NSDictionary { shown=card as NSDictionary;ipc.set(card) }
         promotion?.cancel();promotion=nil
-        if let wait=tracker.nextChange(at:now) {
+        if let wait {
             let work=DispatchWorkItem { [weak self] in self?.refresh() }
             promotion=work;queue.asyncAfter(deadline:.now()+wait+0.05,execute:work)
         }
