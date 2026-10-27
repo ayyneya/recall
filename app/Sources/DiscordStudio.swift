@@ -76,6 +76,10 @@ import Observation
     private static let homeParts:Set<HeaderFold.Text>=[.customize,.levelRow,.shellHome]
     var gallery=false
     var galleryIndex:Int?
+    /// The last step through My cards, and which way: the cards slide along with it (the design's carousel). A card
+    /// added or deleted since moves nothing.
+    struct GallerySlide: Equatable { let id=UUID();let way:CGFloat;var moving=true }
+    var gallerySlide:GallerySlide?
     var slot:Slot = .lineTwo
     var openLine:Int?
     var topic:Topic = .rank
@@ -114,15 +118,15 @@ import Observation
     var erased:CareerHistory?
     /// How far a hold to erase has gone (0 to 1): the sessions are crossed out one after another.
     var eraseProgress:Double=0
-    var undoLeft=0
-    var exported=false
-    var hoverSeen=UserDefaults.standard.bool(forKey:"discordHoverSeen") { didSet { UserDefaults.standard.set(hoverSeen,forKey:"discordHoverSeen") } }
-    /// Earned lines the player has unlocked with their key.
     /// When the sessions began to slide away, a hold to erase done; whether their list has closed since.
     var sweep:Date?
     var sweepClosed=false
     /// The sessions came back with Undo: they pop in again, one after another.
     var restored=false
+    var undoLeft=0
+    var exported=false
+    var hoverSeen=UserDefaults.standard.bool(forKey:"discordHoverSeen") { didSet { UserDefaults.standard.set(hoverSeen,forKey:"discordHoverSeen") } }
+    /// Earned lines the player has unlocked with their key.
     var unlocked=Set(UserDefaults.standard.stringArray(forKey:"discordUnlocked") ?? []) { didSet { UserDefaults.standard.set(Array(unlocked).sorted(),forKey:"discordUnlocked") } }
     /// The design's tooltips for these pages.
     @ObservationIgnored let tips=DesignTips()
@@ -635,13 +639,13 @@ import Observation
     }
     var galleryItem:GalleryItem? { galleryItems.indices.contains(galleryPlace) ? galleryItems[galleryPlace] : nil }
     func openGallery(_ open:Bool) {
-        gallery=open;galleryIndex=nil;sharing=false;importing=false;renaming=nil;preview=nil;held=nil;openLine=nil;copied=false;shift=0;galleryStart=Date()
+        gallery=open;galleryIndex=nil;gallerySlide=nil;sharing=false;importing=false;renaming=nil;preview=nil;held=nil;openLine=nil;copied=false;shift=0;galleryStart=Date()
         if open,let before=sceneBeforeParty,live == nil { scene=before;sceneBeforeParty=nil;slot = .lineTwo }
     }
     func galleryStep(_ by:Int) {
         let next=galleryPlace+by
         guard by != 0,galleryItems.indices.contains(next) else { return }
-        galleryIndex=next;renaming=nil;copied=false;shift=0;galleryStart=Date()
+        galleryIndex=next;gallerySlide=GallerySlide(way:by > 0 ? 1 : -1);renaming=nil;copied=false;shift=0;galleryStart=Date()
     }
     func use(_ item:GalleryItem) {
         shelf.chosen=item.design.id;gallery=false;galleryIndex=nil;sharing=false;importing=false;renaming=nil;held=nil;shift=0
@@ -650,7 +654,7 @@ import Observation
     func duplicate(_ item:GalleryItem) {
         var copy=item.design
         copy.id=UUID().uuidString;copy.name=String(L("{0} 2",item.name).prefix(24))
-        shelf.mine.append(copy);galleryIndex=galleryItems.firstIndex { $0.design.id == copy.id };sharing=false;renaming=nil;shift=0;galleryStart=Date()
+        shelf.mine.append(copy);galleryIndex=galleryItems.firstIndex { $0.design.id == copy.id };gallerySlide?.moving=false;sharing=false;renaming=nil;shift=0;galleryStart=Date()
         say(L("Duplicated as “{0}”",copy.name))
     }
     /// Your only card can't go (Default counts as yours until it's hidden); the other ready-made cards are only
@@ -664,7 +668,7 @@ import Observation
         let before=shelf,wasInUse=item.design.id == shelf.inUse.id,place=galleryPlace
         if item.readyMade { shelf.hidden.append(item.design.id) } else { shelf.mine.removeAll { $0.id == item.design.id } }
         if wasInUse { shelf.chosen=galleryItems.first?.design.id ?? "default" }
-        galleryIndex=min(place,max(0,galleryItems.count-1));sharing=false;renaming=nil;shift=0;galleryStart=Date()
+        galleryIndex=min(place,max(0,galleryItems.count-1));gallerySlide?.moving=false;sharing=false;renaming=nil;shift=0;galleryStart=Date()
         say(wasInUse ? L("Deleted “{0}”. Now using “{1}”.",item.name,shelf.inUse.shownName) : L("Deleted “{0}”",item.name),undo:before)
     }
     var hiddenCount:Int { shelf.hidden.count }

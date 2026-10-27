@@ -45,8 +45,11 @@ private struct GalleryCards: View {
                         }
                 }
                 .scaleEffect(0.86)
+                // A step: it comes in from where its neighbour was, at 0.6 (the old one goes at once: its neighbour
+                // takes its place, below).
+                .modifier(PartArrival(trigger:nil,studio.gallerySlide.flatMap { $0.moving ? (ArrivalStart(x:$0.way*277,opacity:0.9,scale:0.6/0.86),Self.slide) : nil }))
                 .id(studio.galleryItem?.design.id)
-                .transition(.asymmetric(insertion:.opacity.combined(with:.scale(scale:0.94)),removal:.opacity))
+                .transition(.identity)
                 HStack {
                     arrow("lucide:chevron-left",name:L("Previous card"),enabled:place > 0) { studio.galleryStep(-1) }
                     Spacer()
@@ -57,9 +60,10 @@ private struct GalleryCards: View {
                 .padding(.horizontal,9).offset(y:1)
             }
             .frame(maxWidth:.infinity,maxHeight:.infinity)
-            .animation(.timingCurve(0.22,1,0.36,1,duration:0.45),value:place)
         }
     }
+    /// The design's carousel: each step slides the cards along over 0.62 s.
+    static let slide=Animation.timingCurve(0.22,1,0.36,1,duration:0.62)
     /// A neighbour, smaller and to the side: a click shows it.
     private func neighbour(_ item:DiscordStudio.GalleryItem,now:Date,leading:Bool)->some View {
         let activity=studio.galleryActivity(item,at:now)
@@ -72,9 +76,19 @@ private struct GalleryCards: View {
         .buttonStyle(NeighbourStyle())
         .scaleEffect(0.74,anchor:leading ? .trailing : .leading)
         .frame(width:300)
+        .modifier(PartArrival(trigger:studio.gallerySlide?.id,neighbourArrival(leading:leading)))
         .offset(x:leading ? -(166+150) : 166+150)
         .accessibilityLabel(leading ? L("Previous card") : L("Next card"))
-        .transition(.opacity)
+        .transition(.identity)
+    }
+    /// A neighbour fades in as My cards opens. On a step, the one on the side the cards move to was the card in the
+    /// middle: it shrinks from there to its place; the other comes in from further out, at 0.6, fading in.
+    private func neighbourArrival(leading:Bool)->(start:ArrivalStart,animation:Animation) {
+        guard let slide=studio.gallerySlide,slide.moving else { return (ArrivalStart(opacity:0),Animation.cssEase(0.5).delay(0.1)) }
+        let way=slide.way
+        let anchor:UnitPoint=leading ? .trailing : .leading
+        if (way > 0) == leading { return (ArrivalStart(x:way*326,scale:1.066/0.74,anchor:anchor),Self.slide) }
+        return (ArrivalStart(x:way*150,opacity:0,scale:0.6/0.74,anchor:anchor),Self.slide)
     }
     private func arrow(_ icon:String,name:String,enabled:Bool,_ action:@escaping ()->Void)->some View {
         Button(action:action) {
@@ -163,6 +177,9 @@ private struct GalleryCaption: View {
         .padding(.top,2).padding(.horizontal,20).padding(.bottom,14)
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.3),value:studio.sharing)
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.3),value:studio.importing)
+        // As My cards opens; and on a step, in from the side the cards come from.
+        .fadeIn(0.32,delay:0.2)
+        .modifier(PartArrival(trigger:studio.gallerySlide?.id,studio.gallerySlide.flatMap { $0.moving ? (ArrivalStart(x:$0.way*26,opacity:0),Animation.timingCurve(0.22,1,0.36,1,duration:0.44)) : nil },onAppear:false))
     }
     private func tag(_ text:String,icon:String?,back:Color,fore:Color)->some View {
         HStack(spacing:4) { if let icon { DesignIcon(icon,size:13) };Text(text).designFont(11,.bold) }

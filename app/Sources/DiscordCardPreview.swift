@@ -483,7 +483,7 @@ struct BadgeImage: View {
             .frame(width:size,height:size).background(back).clipShape(Circle())
     }
 }
-/// "⟳ 3": a list of this many takes turns here.
+/// "⟳ 3": a list of this many takes turns here. It pops in a quarter second after it shows.
 struct Pin: View {
     let count:Int
     var body:some View {
@@ -493,6 +493,7 @@ struct Pin: View {
             .background(DiscordColors.accent,in:Capsule())
             .overlay { Capsule().strokeBorder(DiscordColors.card,lineWidth:2).padding(-2) }
             .allowsHitTesting(false)
+            .popIn(0.35,delay:0.25).transition(.identity)
     }
 }
 /// How far Line 2 is through its turn, as a ring.

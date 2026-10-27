@@ -352,6 +352,8 @@ struct ArrivalStart: Equatable {
     var y:CGFloat=0
     var opacity:Double=1
     var scale:CGFloat=1
+    /// The point it scales about (CSS's transform-origin).
+    var anchor:UnitPoint = .center
 }
 /// A part arriving, as the design's CSS animations run: from where it starts to where it is, along its own curve, when
 /// it's first shown (unless told not to) and whenever `trigger` changes (another line, another badge); nil, it just
@@ -391,7 +393,7 @@ private struct ArrivalEffect: ViewModifier, Animatable {
     var animatableData:Double { get { phase } set { phase=newValue } }
     func body(content:Content)->some View {
         let left=waiting ? 1 : min(1,runs-phase)
-        content.scaleEffect(1+(from.scale-1)*left).offset(x:from.x*left,y:from.y*left).opacity(1+(from.opacity-1)*left)
+        content.scaleEffect(1+(from.scale-1)*left,anchor:from.anchor).offset(x:from.x*left,y:from.y*left).opacity(1+(from.opacity-1)*left)
     }
 }
 /// How the design's highlights glide from one item to another (its placeThumb, placeGlides and placeVGlides): over
