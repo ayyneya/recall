@@ -649,16 +649,19 @@ private struct ImageTabs: View {
 /// line, repeating, sliding one width a second to the left (its dcShift: the position to 300% in six seconds).
 struct RibbonLine: View {
     var rounded=true
+    /// Held as it was at that moment (Customize's morph carries the word as it left); moving otherwise.
+    var still:Date?=nil
     var body:some View {
-        TimelineView(.animation) { context in
-            GeometryReader { box in
-                let width=max(box.size.width,1),shift=CGFloat(context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy:3))*width
-                HStack(spacing:0) {
-                    ForEach(0..<2,id:\.self) { _ in LinearGradient(stops:DiscordColors.ribbon,startPoint:.leading,endPoint:.trailing).frame(width:3*width) }
-                }.offset(x:-shift)
-            }
-            .clipShape(RoundedRectangle(cornerRadius:rounded ? 2 : 0))
+        if let still { ribbon(at:still) } else { TimelineView(.animation) { ribbon(at:$0.date) } }
+    }
+    private func ribbon(at date:Date)->some View {
+        GeometryReader { box in
+            let width=max(box.size.width,1),shift=CGFloat(date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy:3))*width
+            HStack(spacing:0) {
+                ForEach(0..<2,id:\.self) { _ in LinearGradient(stops:DiscordColors.ribbon,startPoint:.leading,endPoint:.trailing).frame(width:3*width) }
+            }.offset(x:-shift)
         }
+        .clipShape(RoundedRectangle(cornerRadius:rounded ? 2 : 0))
     }
 }
 /// A picture as it would be now; the game's own picture when there's none.

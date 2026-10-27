@@ -35,8 +35,10 @@ extension DiscordColors {
     /// The design's ribbon of colour (Customize, the gliding underlines): amber, orange, pink, violet, orange, amber,
     /// blended as its browser blends them ("in oklch": through OKLCH, the shorter way round the hues, which keeps
     /// the colours between them bright), in steps fine enough not to show.
-    static let ribbon:[Gradient.Stop]={
-        let colors:[(Double,Double,Double)]=[(255,184,92),(255,128,64),(255,92,138),(214,98,230),(236,106,46),(255,184,92)]
+    static let ribbon:[Gradient.Stop]=oklch([(255,184,92),(255,128,64),(255,92,138),(214,98,230),(236,106,46),(255,184,92)])
+    /// The design's gradient frame (Customize's morph): amber, orange, pink, violet, blended the same way.
+    static let frame:[Gradient.Stop]=oklch([(255,184,92),(255,128,64),(255,92,138),(214,98,230)])
+    private static func oklch(_ colors:[(Double,Double,Double)])->[Gradient.Stop] {
         let points=colors.map { OKLCH.point($0.0/255,$0.1/255,$0.2/255) }
         var stops:[Gradient.Stop]=[]
         for index in 0..<points.count-1 {
@@ -50,7 +52,7 @@ extension DiscordColors {
         }
         stops.append(.init(color:OKLCH.color(points.last!.l,points.last!.c,points.last!.h),location:1))
         return stops
-    }()
+    }
 }
 extension DiscordColors {
     /// The profile banner's sweep: indigo, violet at 55%, pink (the design's OKLCH colours), blended in OKLab as its browser
@@ -277,11 +279,18 @@ extension Text {
 }
 
 extension AnyTransition {
-    /// A part that comes with another screen fades in once the screen has moved into place: a new view shows at
-    /// its new place at once, while all around it is still moving. It goes at once.
-    static var afterMove:AnyTransition {
-        .asymmetric(insertion:.opacity.animation(.easeOut(duration:0.2).delay(0.42)),removal:.opacity.animation(.linear(duration:0.06)))
-    }
+    /// A part that comes with another screen, or goes with the one it leaves, as the design's do: at once, while all
+    /// around it still moves (riding what holds it).
+    static var atOnce:AnyTransition { .opacity.animation(.linear(duration:0)) }
+    /// A page coming in where it would have sat on the screen going, its top `by` lower (or higher) and its foot where it
+    /// ends: laid out in the room it would have had there, so as that room closes (or opens) over the transition's time,
+    /// the top is carried with what grows or shrinks above it and what sits at its foot stays, as the design's column
+    /// carries its page (a view coming in is otherwise laid out at once where it ends).
+    static func ride(_ by:CGFloat)->AnyTransition { .modifier(active:Ride(top:by),identity:Ride(top:0)) }
+}
+private struct Ride: ViewModifier {
+    let top:CGFloat
+    func body(content:Content)->some View { content.padding(.top,top) }
 }
 
 /// The design's easings that a cubic curve can't draw, each from 0 to 1 over progress 0 to 1 (overshooting on the

@@ -14,44 +14,77 @@ struct DiscordEditor: View {
                     PanelScroller { EditorPanel(studio:studio).padding(.horizontal,2).padding(.bottom,12) }
                 }
                 .padding(.top,12).frame(maxHeight:.infinity,alignment:.top)
-                .popIn(0.42).transition(.identity)
+                // Back from My cards, under the stage as it shrinks back.
+                .popIn(0.42).transition(.asymmetric(insertion:.ride(CardStage.height(.editor,gallery:true)-CardStage.height(.editor,gallery:false)),removal:.identity))
             }
-            Spacer(minLength:0)
-            EditorFooter(studio:studio).padding(.top,12)
         }
+        // Its room and no more, while the stage still shrinks over it (AnyTransition.ride): the rail, which can't shrink,
+        // runs on past its foot, cut off there as the design's is, rather than pushing the stage out of place.
+        .frame(minHeight:0,maxHeight:.infinity,alignment:.top)
+        .clipShape(Band())
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.52),value:studio.gallery)
     }
+    /// The editor's height and well past its sides.
+    private struct Band: Shape { func path(in rect:CGRect)->Path { Path(rect.insetBy(dx:-40,dy:0)) } }
 }
 
 /// "Settings › Discord" over the page's title. In Customize the title is the card's name, which opens My cards.
 struct DiscordPageHeader: View {
     @Bindable var studio:DiscordStudio
     var body:some View {
-        VStack(alignment:.leading,spacing:2) {
-            HStack(spacing:5) {
-                LinkButton(title:L("Settings")) { studio.closePage() }
-                DesignIcon("lucide:chevron-right",size:11).foregroundStyle(DiscordColors.ink(0.55))
-                LinkButton(title:L("Discord")) { studio.closePage() }
-            }
-            HStack(spacing:8) {
-                if studio.screen == .editor {
-                    Button { studio.openGallery(!studio.gallery) } label: {
-                        HStack(spacing:9) {
-                            DesignIcon("rc:cards",size:18).foregroundStyle(DiscordColors.link)
-                                .frame(width:30,height:30).background(DiscordColors.accent.opacity(studio.gallery ? 0.24 : 0.12),in:RoundedRectangle(cornerRadius:9))
-                            Text(studio.gallery ? L("My cards") : studio.design.shownName).designFont(24,.bold).tracking(-0.7).lineLimit(1)
-                                .foregroundStyle(DiscordColors.body).contentTransition(.opacity)
-                            DesignIcon("lucide:chevron-down",size:16).foregroundStyle(DiscordColors.ink(0.45)).rotationEffect(.degrees(studio.gallery ? 180 : 0))
-                        }.frame(height:32).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain).accessibilityLabel(L("My cards")).accessibilityValue(studio.gallery ? L("Open") : L("Closed"))
-                } else {
-                    Text(studio.screen == .profile ? L("Your profile") : L("What Recall remembers")).designFont(24,.bold).tracking(-0.7).foregroundStyle(DiscordColors.body)
+        FoldTime { t in
+            let fold=studio.fold
+            let chevron=fold.map { HeaderFold.chevron($0,at:t) } ?? 1,title=fold.map { HeaderFold.title($0,at:t) } ?? (1,0)
+            // Customize's morph carries the card's title: there till it lands, from the start when it leaves.
+            let carried=fold.map { $0.studio && (!$0.opening || t < StudioMorph.length) } ?? false
+            VStack(alignment:.leading,spacing:2) {
+                HStack(spacing:5) {
+                    link(L("Settings"),.settings)
+                    DesignIcon("lucide:chevron-right",size:11).foregroundStyle(DiscordColors.ink(0.55)).opacity(chevron).animation(nil,value:fold)
+                    link(L("Discord"),.discord)
                 }
-            }.frame(minHeight:32)
+                titleRow(carried:carried).opacity(title.opacity).offset(y:title.rise).animation(nil,value:fold)
+            }
+            .frame(height:46,alignment:.bottom)
         }
-        .frame(height:46,alignment:.bottom)
+        .foldClock(studio.folds)
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.35),value:studio.gallery)
+        // One piece, moving with the header above it as that folds or opens: what's in it doesn't animate as a fold
+        // starts (foldClock), so on its own each part would jump to where it ends.
+        .geometryGroup()
+    }
+    /// A link back, hidden while a copy of it travels to or from the header (HeaderFold); where it is, as it is when the
+    /// header is folded, kept for that copy.
+    private func link(_ title:String,_ text:HeaderFold.Text)->some View {
+        LinkButton(title:title) { studio.closePage() }
+            .onGeometryChange(for:CGRect.self) { $0.frame(in:.named(LauncherStyle.sheetSpace)) } action:{ frame in
+                if studio.fold == nil { studio.foldFrames[text]=frame.offsetBy(dx:0,dy:studio.screen == .home ? -HeaderFold.chrome : 0) }
+            }
+            .opacity(studio.fold == nil ? 1 : 0).animation(nil,value:studio.fold)
+    }
+    /// The page's title, or Customize's card menu; while folding back, the one that was open. Its words hide while
+    /// Customize's morph carries them (StudioMorph); where they are, as when the header is folded, is kept for it.
+    private func titleRow(carried:Bool)->some View {
+        HStack(spacing:8) {
+            if studio.pageShown == .editor {
+                Button { studio.openGallery(!studio.gallery) } label: {
+                    HStack(spacing:9) {
+                        DesignIcon("rc:cards",size:18).foregroundStyle(DiscordColors.link)
+                            .frame(width:30,height:30).background(DiscordColors.accent.opacity(studio.gallery ? 0.24 : 0.12),in:RoundedRectangle(cornerRadius:9))
+                        Text(studio.gallery ? L("My cards") : studio.design.shownName).designFont(24,.bold).tracking(-0.7).lineLimit(1)
+                            .foregroundStyle(DiscordColors.body).contentTransition(.opacity)
+                            .onGeometryChange(for:CGRect.self) { $0.frame(in:.named(LauncherStyle.sheetSpace)) } action:{ frame in
+                                studio.foldFrames[.cardTitle]=frame.offsetBy(dx:0,dy:studio.screen == .home ? -HeaderFold.chrome : 0)
+                            }
+                            .opacity(carried ? 0 : 1)
+                        DesignIcon("lucide:chevron-down",size:16).foregroundStyle(DiscordColors.ink(0.45)).rotationEffect(.degrees(studio.gallery ? 180 : 0))
+                    }.frame(height:32).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).accessibilityLabel(L("My cards")).accessibilityValue(studio.gallery ? L("Open") : L("Closed"))
+            } else {
+                Text(studio.pageShown == .profile ? L("Your profile") : L("What Recall remembers")).designFont(24,.bold).tracking(-0.7).foregroundStyle(DiscordColors.body)
+            }
+        }.frame(minHeight:32)
     }
 }
 
@@ -60,32 +93,30 @@ struct DiscordPageHeader: View {
 /// cards, the gallery. One stage for all three, so going between them only changes its height.
 struct CardStage: View {
     @Bindable var studio:DiscordStudio
+    /// The stage's height on Discord's tab, in Customize, and in My cards.
+    static func height(_ screen:DiscordStudio.Screen,gallery:Bool)->CGFloat { screen == .home ? 396 : gallery ? 548 : 252 }
     var body:some View {
         let home=studio.screen == .home
-        DiscordStage(studio:studio,height:home ? 396 : studio.gallery ? 548 : 252,top:home ? 0 : 34,power:home) {
+        DiscordStage(studio:studio,height:Self.height(studio.screen,gallery:studio.gallery),top:home ? 0 : 34,power:home) {
             if studio.gallery {
                 DiscordGallery(studio:studio)
             } else {
                 // Off, the card stays under the stage's cover, as the design shows it.
-                TimelineView(.periodic(from:.now,by:1)) { context in
+                TimelineView(.seconds) { context in
                     let activity=studio.activity(at:context.date)
                     // From now, not the timeline's tick (up to a second before it).
                     let outlineDelay:Double=studio.levelFlow.map { flow in max(0,0.88-Date().timeIntervalSince(flow.at)) } ?? 0
                     if home || studio.device == .desktop {
-                        DiscordShell(profile:home,avatar:studio.avatar,fun:studio.profileFun) {
-                            DiscordCardView(activity:activity,now:context.date,selected:home ? nil : studio.slot,
+                        // Where the layout puts it, which it has from the moment a fold starts: what the morph needs.
+                        DiscordShell(profile:home,avatar:studio.avatar,fun:studio.profileFun,place:{ studio.foldFrames[home ? .shellHome : .shellEditor]=$0 }) {
+                            DiscordCardView(activity:activity,now:context.date,selected:home ? nil : studio.slot,outlineWait:studio.fold?.opening == true ? 0.1 : 0,
                                             pick:home ? (studio.power ? { studio.openEditor(at:$0) } : nil) : { studio.pick($0) },
                                             lineTwoTurn:home ? studio.homeLineTwoTurn(at:context.date) : nil,
                                             level:home ? studio.level : nil,turn:studio.turn(at:context.date))
                                 .modifier(LevelReveal(level:studio.level,on:home))
-                                .overlay {
-                                    if home && studio.level == .custom {
-                                        // After Customize's light has traced the card, when it's running.
-                                        MarchingOutline(delay:outlineDelay)
-                                            .transition(.asymmetric(insertion:.identity,removal:.opacity.animation(.linear(duration:0.22))))
-                                    }
-                                }
-                                .overlay(alignment:.top) { if !home { TurnDots(studio:studio,now:context.date).offset(y:10).transition(.afterMove) } }
+                                // After Customize's light has traced the card, when it's running.
+                                .overlay { MarchingOutline(on:home && studio.level == .custom,delay:outlineDelay) }
+                                .overlay(alignment:.top) { if !home { TurnDots(studio:studio,now:context.date).offset(y:10).transition(.atOnce) } }
                                 .onGeometryChange(for:CGRect.self) { $0.frame(in:.discordTab) } action:{ studio.cardFrame=$0 }
                         }
                         .frame(maxHeight:.infinity)
@@ -99,7 +130,7 @@ struct CardStage: View {
                 .transition(.opacity)
             }
         } controls: {
-            if !home && !studio.gallery { DeviceToggle(studio:studio).transition(.afterMove) }
+            if !home && !studio.gallery { DeviceToggle(studio:studio).transition(.atOnce) }
         }
         .overlay(alignment:.topLeading) {
             if !home && !studio.gallery {
@@ -118,7 +149,7 @@ struct CardStage: View {
                 Text(L("Example data")).designFont(11,.bold).foregroundStyle(Color(red:1,green:200/255,blue:130/255))
                     .padding(.horizontal,8).frame(height:18).background(Color(red:1,green:190/255,blue:92/255).opacity(0.14),in:RoundedRectangle(cornerRadius:6))
                     .padding(.leading,studio.device == .phone ? 0 : 13).padding(.bottom,studio.device == .phone ? 5 : 6)
-                    .transition(.afterMove)
+                    .transition(.atOnce)
             }
         }
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.52),value:studio.gallery)
@@ -133,19 +164,17 @@ private struct LevelReveal: ViewModifier {
     @State private var height:CGFloat?
     @State private var sized:DiscordPresenceLevel?
     func body(content:Content)->some View {
-        if on {
-            content
-                .fixedSize(horizontal:false,vertical:true)
-                .onGeometryChange(for:CGFloat.self) { $0.size.height } action:{ new in
-                    if let sized,sized != level { withAnimation(.timingCurve(0.3,0.75,0.35,1,duration:0.32)) { height=new } } else { height=new }
-                    sized=level
-                }
-                .frame(height:height,alignment:.top)
-                .background(DiscordColors.card,in:RoundedRectangle(cornerRadius:8))
-                .clipShape(RoundedRectangle(cornerRadius:8))
-        } else {
-            content
-        }
+        // One shape on every screen, so the card stays the same card as Customize opens and closes (a branch here would
+        // make it another, cross-fading with the first).
+        content
+            .fixedSize(horizontal:false,vertical:true)
+            .onGeometryChange(for:CGFloat.self) { $0.size.height } action:{ new in
+                if on,let sized,sized != level { withAnimation(.timingCurve(0.3,0.75,0.35,1,duration:0.32)) { height=new } } else { height=new }
+                sized=level
+            }
+            .frame(height:on ? height : nil,alignment:.top)
+            .background(DiscordColors.card,in:RoundedRectangle(cornerRadius:8))
+            .clipShape(RoundedRectangle(cornerRadius:8))
     }
 }
 /// A quiet chip on the stage ("Point at pictures"), its icon nudging now and then: still most of 2.6 seconds, then

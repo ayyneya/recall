@@ -44,7 +44,38 @@ import Observation
     @ObservationIgnored var changed:(DiscordCardShelf)->Void={ _ in }
 
     // MARK: where the player is
-    var screen:Screen = .home
+    var screen:Screen = .home {
+        didSet {
+            came=(oldValue,gallery)
+            if (screen == .home) != (oldValue == .home) {
+                folds+=1
+                // Customize's own morph goes with it to and from Customize, on the computer's card.
+                let title=oldValue == .editor && gallery ? L("My cards") : design.shownName
+                // Where Customize's morph starts and lands, as all is now (what's recorded follows what moves); Discord's
+                // tab's own as it was when Customize opened, since coming back the tab is still on its way in.
+                if oldValue == .home { homeFrames=foldFrames.filter { Self.homeParts.contains($0.key) } }
+                let frames=screen == .home ? foldFrames.merging(homeFrames) { _,kept in kept } : foldFrames
+                fold=Fold(opening:screen != .home,count:folds,studio:(screen == .editor || oldValue == .editor) && device == .desktop,title:title,at:Date(),frames:frames)
+            }
+            if screen != .home { pageShown=screen }
+        }
+    }
+    /// What the breadcrumb's title is for: the open page, and the one that was open while it folds away.
+    private(set) var pageShown:Screen = .editor
+    /// The screen before this one, and whether My cards was open on it: where what comes in starts out (DiscordTab).
+    private(set) var came:(screen:Screen,gallery:Bool)=(.home,false)
+    /// Settings' header folding into the breadcrumb as Customize or a page opens, or back as it closes (HeaderFold): which
+    /// way, which fold it is, whether Customize's own morph plays with it (StudioMorph) and the card's title that one
+    /// carries, when it started, and where that morph's parts were then; gone once it has played.
+    struct Fold: Equatable { let opening:Bool;let count:Int;let studio:Bool;let title:String;let at:Date;let frames:[HeaderFold.Text:CGRect] }
+    var fold:Fold?
+    /// How many folds there have been: what the fold's clock counts (FoldClock).
+    private(set) var folds=0
+    /// Where what travels as the header folds is, and what it passes, in the sheet (LauncherStyle.sheetSpace).
+    @ObservationIgnored var foldFrames:[HeaderFold.Text:CGRect]=[:]
+    /// Discord's tab's parts of Customize's morph, as they were when Customize last opened.
+    @ObservationIgnored private var homeFrames:[HeaderFold.Text:CGRect]=[:]
+    private static let homeParts:Set<HeaderFold.Text>=[.customize,.levelRow,.shellHome]
     var gallery=false
     var galleryIndex:Int?
     var slot:Slot = .lineTwo
@@ -98,7 +129,7 @@ import Observation
     /// read like a session's and run on, as the design's do.
     @ObservationIgnored private var opened=Date()
     var previewMatchStart:Date { opened.addingTimeInterval(-192) }
-    func settingsOpened() { opened=Date() }
+    func settingsOpened() { opened=Date();fold=nil }
     @ObservationIgnored private var toastEnds:Task<Void,Never>?
     @ObservationIgnored private var pointing:Task<Void,Never>?
     @ObservationIgnored var eraseTimer:Task<Void,Never>?

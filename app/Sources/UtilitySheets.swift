@@ -64,12 +64,23 @@ struct SettingsSheet:View {
         let folded=tab == .discord && studio.screen != .home
         DesignTipLayer(tips:studio.tips) {
             VStack(spacing:0) {
+                // As it folds, "Settings" and the tab's label travel to the breadcrumb as copies, and the tabs slip away
+                // (HeaderFold); what they measure is kept while nothing moves.
+                let fold=tab == .discord ? studio.fold : nil
                 VStack(spacing:14) {
-                    LauncherHeading(title:L("Settings"),subtitle:"",compact:true,color:DiscordColors.body).frame(height:34,alignment:.top)
-                    LauncherTabs(tabs:SettingsTab.allCases.filter { $0 != .discord || model.showsDiscord },selection:$model.settingsTab,width:72,spacing:4,
-                                 title:\.title,symbol:\.symbol,tint:\.tint)
+                    LauncherHeading(title:L("Settings"),subtitle:"",compact:true,color:DiscordColors.body)
+                        .onGeometryChange(for:CGRect.self) { $0.frame(in:.named(LauncherStyle.sheetSpace)) } action:{ if studio.fold == nil { studio.foldFrames[.title]=$0 } }
+                        .opacity(fold == nil ? 1 : 0).animation(nil,value:fold)
+                        .frame(height:34,alignment:.top)
+                    FoldTime { t in
+                        LauncherTabs(tabs:SettingsTab.allCases.filter { $0 != .discord || model.showsDiscord },selection:$model.settingsTab,width:72,spacing:4,
+                                     title:\.title,symbol:\.symbol,tint:\.tint,
+                                     look:fold.map { fold in { HeaderFold.tab($0,fold,at:t) } },
+                                     chosenLabel:{ if studio.fold == nil { studio.foldFrames[.tab]=$0 } })
+                    }
+                    .foldClock(studio.folds)
                 }
-                .frame(height:folded ? 0 : 102,alignment:.top).clipped().allowsHitTesting(!folded)
+                .frame(height:folded ? 0 : HeaderFold.chrome,alignment:.top).clipped().allowsHitTesting(!folded)
                 if tab == .discord {
                     DiscordTab(studio:studio) { footer }
                 } else {
@@ -86,6 +97,8 @@ struct SettingsSheet:View {
             }
             .padding(.top,22).padding(.horizontal,28).padding(.bottom,20)
             .animation(.timingCurve(0.22,1,0.36,1,duration:0.52),value:folded)
+            .coordinateSpace(.named(LauncherStyle.sheetSpace))
+            .overlay(alignment:.topLeading) { if tab == .discord { HeaderFoldLayer(studio:studio) } }
         }
         .font(LauncherStyle.font(14))
             .frame(width:LauncherStyle.sheetWidth,height:LauncherStyle.largeSheetHeight)

@@ -208,6 +208,8 @@ struct DiscordCardView: View {
     var phone=false
     /// The part being changed (Customize), outlined; a click on a part picks it.
     var selected:DiscordStudio.Slot?
+    /// How long the selected part's outline waits before it fades in (as Customize opens).
+    var outlineWait=0.0
     var pick:((DiscordStudio.Slot)->Void)?
     /// Counts of what takes turns, pinned to the parts (My cards).
     var pins:CardPins?
@@ -251,7 +253,11 @@ struct DiscordCardView: View {
     var body:some View {
         Group { if phone { phoneCard } else { desktopCard } }
             .overlayPreferenceValue(CardPartBounds.self) { bounds in
-                if let selected,let anchor=bounds[selected] { PartHighlight(slot:selected,anchor:anchor).transition(.afterMove) }
+                // The design's: a 260 ms ease-out fade in, or out at once.
+                if let selected,let anchor=bounds[selected] {
+                    PartHighlight(slot:selected,anchor:anchor)
+                        .transition(.asymmetric(insertion:.opacity.animation(.easeOut(duration:0.26).delay(outlineWait)),removal:.atOnce))
+                }
             }
             .environment(\.colorScheme,.dark)
             .onAppear { shownLevel=level;shownTurn=turn;shownDetails=details;shownBadge=assets["small_image"];appeared=true }
@@ -530,7 +536,7 @@ private struct PartHighlight: View {
             withAnimation(.easeOut(duration:0.2)) { quiet=false }
             try? await Task.sleep(for:.milliseconds(1300))
             guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration:0.9)) { quiet=true }
+            withAnimation(.cssEase(0.9)) { quiet=true }
         }
     }
 }
@@ -543,6 +549,8 @@ struct DiscordShell<Card:View>: View {
     /// The easter eggs on the picture and the status line (DiscordProfile.swift): the Discord tab's own, so they
     /// outlast the card's redrawing; the gallery's cards, which show no profile, use their own.
     var fun=ProfileFun()
+    /// Told where the pop-out is in the sheet (LauncherStyle.sheetSpace), as it changes.
+    var place:((CGRect)->Void)?=nil
     @ViewBuilder var card:Card
     var body:some View {
         VStack(alignment:.leading,spacing:0) {
@@ -566,6 +574,7 @@ struct DiscordShell<Card:View>: View {
         .background { RoundedRectangle(cornerRadius:10).fill(DiscordColors.popout).shadow(color:.black.opacity(0.45),radius:16,y:12) }
         .overlay(alignment:.topLeading) { ProfileFunLayer(fun:fun) }
         .onGeometryChange(for:CGSize.self) { $0.size } action:{ fun.shell=$0 }
+        .onGeometryChange(for:CGRect.self) { $0.frame(in:.named(LauncherStyle.sheetSpace)) } action:{ place?($0) }
         .modifier(FunJolt(fun:fun))
         .onChange(of:profile) { _,shown in if !shown { fun.kill() } }
         .environment(\.colorScheme,.dark)

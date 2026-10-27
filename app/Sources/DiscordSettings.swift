@@ -21,19 +21,21 @@ struct DiscordStage<Content:View,Controls:View>: View {
             content.padding(.top,top).frame(maxWidth:.infinity,maxHeight:.infinity)
         }
         .frame(maxWidth:.infinity).frame(height:height)
+        // The bars move with the stage as one, so what comes in with another screen rides along at once (SwiftUI moves
+        // each drawn view on its own, and a new one would show at its new place while the bar still moves).
         .overlay(alignment:.topLeading) {
             HStack(spacing:6) {
                 DesignIcon("ic:baseline-discord",size:16).foregroundStyle(DiscordColors.ink(0.45))
                     .frame(width:26,height:26).background(.white.opacity(0.05),in:RoundedRectangle(cornerRadius:8))
                 controls
-            }.padding(.leading,11).padding(.top,9)
+            }.padding(.leading,11).padding(.top,9).geometryGroup()
         }
         .overlay(alignment:.topTrailing) {
             HStack(spacing:4) {
                 // Where the player is says nothing at Basic, and nothing runs while off.
                 if studio.level != .normal && studio.power { SceneChip(studio:studio).transition(.identity) }
-                if power { PowerButton(studio:studio).transition(.afterMove) }
-            }.padding(.trailing,11).padding(.top,9)
+                if power { PowerButton(studio:studio).transition(.atOnce) }
+            }.padding(.trailing,11).padding(.top,9).geometryGroup()
         }
         .overlay { if power && !studio.power { OffCover(studio:studio).transition(.opacity) } }
         .background(DiscordColors.stage)
@@ -131,6 +133,9 @@ struct DiscordTab<Footer:View>: View {
     @ViewBuilder var footer:Footer
     var body:some View {
         let home=studio.screen == .home
+        // What comes in starts where it would have sat on the screen going, carried as the header folds or opens and the
+        // stage grows or shrinks above it; then it rises or drops into place and fades in.
+        let ride=studio.ride
         VStack(alignment:.leading,spacing:0) {
             DiscordPageHeader(studio:studio).frame(height:home ? 0 : 46,alignment:.top).clipped().allowsHitTesting(!home)
             // What leaves goes at once, as in the design (a removal keeps its view on screen as long as it lasts).
@@ -138,18 +143,20 @@ struct DiscordTab<Footer:View>: View {
             case .profile,.history:
                 Group { if studio.screen == .profile { ProfilePage(studio:studio) } else { HistoryPage(studio:studio) } }
                     .padding(.top,16).frame(maxHeight:.infinity,alignment:.top)
-                    .transition(.asymmetric(insertion:.opacity.combined(with:.offset(y:22)),removal:Self.gone))
+                    .transition(.asymmetric(insertion:.ride(ride.page).combined(with:.opacity).combined(with:.offset(y:22)),removal:Self.gone))
             case .home,.editor:
-                // Over what's under it: a new view shows at its final place at once, so Customize, coming in while the
-                // stage still shrinks, slides out from under the stage rather than over it.
+                // Over the page under it, which starts out under it as it grows.
                 CardStage(studio:studio).padding(.top,14).zIndex(1)
-                    .transition(.asymmetric(insertion:.opacity.combined(with:.offset(y:8)).animation(.timingCurve(0.22,1,0.36,1,duration:0.45)),removal:Self.gone))
+                    .transition(.asymmetric(insertion:.ride(ride.header).combined(with:.opacity.combined(with:.offset(y:8)).animation(.timingCurve(0.22,1,0.36,1,duration:0.45))),
+                                            removal:Self.gone))
                 if home {
                     DiscordHome(studio:studio) { footer }
-                        .transition(.asymmetric(insertion:.opacity.combined(with:.offset(y:-22)),removal:Self.gone))
+                        .transition(.asymmetric(insertion:.ride(ride.page).combined(with:.opacity).combined(with:.offset(y:-22)),removal:Self.gone))
                 } else {
                     DiscordEditor(studio:studio)
-                        .transition(.asymmetric(insertion:.opacity.combined(with:.offset(y:22)),removal:Self.gone))
+                        .transition(.asymmetric(insertion:.ride(ride.page).combined(with:.opacity).combined(with:.offset(y:22)),removal:Self.gone))
+                    // Customize's Done is there at once, where it stays.
+                    EditorFooter(studio:studio).padding(.top,12).transition(.atOnce)
                 }
             }
         }
@@ -158,7 +165,20 @@ struct DiscordTab<Footer:View>: View {
         .overlay(alignment:.topLeading) { if let flow=studio.levelFlow { LevelFlow(flow:flow,studio:studio) } }
         .coordinateSpace(.discordTab)
     }
-    private static var gone:AnyTransition { .opacity.animation(.linear(duration:0.06)) }
+    private static var gone:AnyTransition { .opacity.animation(.linear(duration:0)) }
+}
+extension DiscordStudio {
+    /// How far what comes in on this screen starts from where it ends (AnyTransition.ride): by the change in what the
+    /// header takes (Settings' title and tabs on Discord's tab, the breadcrumb on the others); for the page under the
+    /// stage, by the stage's change too while the stage stays, and not at all when the stage comes in with it (the
+    /// stage's own way in takes it along).
+    var ride:(header:CGFloat,page:CGFloat) {
+        let reach={ (screen:Screen)->CGFloat in screen == .home ? HeaderFold.chrome : 46 },staged:Set<Screen>=[.home,.editor]
+        let header=reach(came.screen)-reach(screen)
+        guard staged.contains(screen) else { return (header,header) }
+        guard staged.contains(came.screen) else { return (header,0) }
+        return (header,header+CardStage.height(came.screen,gallery:came.gallery)-CardStage.height(screen,gallery:gallery))
+    }
 }
 /// The tab's own page under the card: the level, the BattleTag and what Recall remembers; off, all dimmed.
 struct DiscordHome<Footer:View>: View {
@@ -186,18 +206,35 @@ struct DiscordHome<Footer:View>: View {
 /// its dashes divide the outline exactly (no seam where it starts, the bottom's middle); it fades in (after
 /// Customize's light has traced the card, when that's running) and goes in a fifth of a second.
 struct MarchingOutline: View {
+    /// Whether it shows. It stays where it is, on the card, so it moves with the card while it fades (in over 0.38 s
+    /// after `delay`, out over 0.22 s), as the design's does; the dashes stop once it's gone.
+    var on:Bool
     var delay:Double=0
     @State private var shown=false
+    @State private var present=false
     @State private var phase:CGFloat=0
     var body:some View {
         GeometryReader { box in
-            let outline=CardOutline(inset:0.75,radius:7.25),period=outline.period(in:box.size)
-            outline.stroke(LinearGradient(stops:CardOutline.colors,startPoint:.bottom,endPoint:.top),
-                           style:StrokeStyle(lineWidth:1.5,lineCap:.round,dash:[period/2,period/2],dashPhase:phase*period))
-                .onAppear { withAnimation(.linear(duration:1.2*period/10).repeatForever(autoreverses:false)) { phase = -1 } }
+            if present {
+                let outline=CardOutline(inset:0.75,radius:7.25),period=outline.period(in:box.size)
+                outline.stroke(LinearGradient(stops:CardOutline.colors,startPoint:.bottom,endPoint:.top),
+                               style:StrokeStyle(lineWidth:1.5,lineCap:.round,dash:[period/2,period/2],dashPhase:phase*period))
+                    // A period on from wherever the dashes are: the same march each time it comes back.
+                    .onAppear { withAnimation(.linear(duration:1.2*period/10).repeatForever(autoreverses:false)) { phase-=1 } }
+            }
         }
+        // Coming back with Discord's tab, it shows on the card as the card still moves into place.
+        .geometryGroup()
         .opacity(shown ? 0.9 : 0).allowsHitTesting(false)
-        .onAppear { withAnimation(.easeOut(duration:0.38).delay(delay)) { shown=true } }
+        .onAppear { if on { show() } }
+        .onChange(of:on) { _,on in
+            if on { show();return }
+            withAnimation(.linear(duration:0.22)) { shown=false } completion:{ if !shown { present=false } }
+        }
+    }
+    private func show() {
+        present=true
+        withAnimation(.easeOut(duration:0.38).delay(delay)) { shown=true }
     }
 }
 /// The card's edge as the design draws round it: from the bottom's middle along the bottom to the left, up, across and
@@ -330,9 +367,12 @@ struct LevelWords: View {
             }
             .background(alignment:.topLeading) { line }
             .coordinateSpace(.named(Self.row))
+            .onGeometryChange(for:CGRect.self) { $0.frame(in:.named(LauncherStyle.sheetSpace)) } action:{ studio.foldFrames[.levelRow]=$0 }
         }.frame(height:34).padding(.leading,2)
     }
     private static let row="levelWords"
+    /// Whether Customize's morph is bringing its word and line back here (StudioMorph carries them till it's done).
+    private var comingBack:Bool { studio.fold.map { !$0.opening && $0.studio } ?? false }
     private func word(_ level:DiscordPresenceLevel)->some View {
         let on=studio.level == level,custom=level == .custom
         return Button { pick(level) } label: {
@@ -347,6 +387,8 @@ struct LevelWords: View {
                 }
                 .onGeometryChange(for:CGRect.self) { $0.frame(in:.named(Self.row)) } action:{ words[level]=$0 }
                 .onGeometryChange(for:CGRect.self) { $0.frame(in:.discordTab) } action:{ if custom { customOnTab=$0 } }
+                .onGeometryChange(for:CGRect.self) { $0.frame(in:.named(LauncherStyle.sheetSpace)) } action:{ if custom { studio.foldFrames[.customize]=$0 } }
+                .opacity(custom && comingBack ? 0 : 1).animation(nil,value:comingBack)
                 .keyframeAnimator(initialValue:1.0,trigger:springs[level] ?? 0) { word,progress in
                     word.scaleEffect(1.14-0.14*DesignEase.outElastic(progress))
                 } keyframes:{ _ in
@@ -384,7 +426,7 @@ struct LevelWords: View {
                 MoveKeyframe(0.0)
                 LinearKeyframe(1.0,duration:GlideStyle.words.duration)
             }
-            .opacity(to == .zero ? 0 : 1)
+            .opacity(to == .zero || comingBack ? 0 : 1).animation(nil,value:comingBack)
     }
 }
 /// The level's line: white, or under Customize the ribbon with an orange glow, changing over 0.45 s.
@@ -527,5 +569,223 @@ extension DiscordStudio {
     var historyNote:String {
         let count=history.runs.count
         return count == 0 ? L("Nothing kept") : count == 1 ? L("1 session on this Mac") : L("{0} sessions on this Mac",String(count))
+    }
+}
+
+// MARK: the header folding
+
+/// Settings' title and tabs folding into Customize's (or a page's) breadcrumb, and back, as the design's header morph:
+/// "Settings" and the tab's "Discord" travel as real text from the header to the breadcrumb's links (their size and
+/// spacing changing as they go, never scaled, so they stay sharp and land exactly), the other tabs slip away to the
+/// sides one after another and the chosen tab fades, then the breadcrumb's chevron and the title come in; closing, all
+/// the other way. DiscordStudio.fold says which way, FoldClock when.
+enum HeaderFold {
+    /// The header's title and tab label, the breadcrumb's links; Customize's word and its row, the card's title, and
+    /// the card as Discord's tab and Customize show it (StudioMorph).
+    enum Text: Hashable { case title,tab,settings,discord,customize,levelRow,cardTitle,shellHome,shellEditor }
+    /// The header's height, which the breadcrumb moves with as it folds (SettingsSheet).
+    static let chrome:CGFloat=102
+    static let length=0.52
+    /// How long it all plays, the last tab coming back included.
+    static let total=0.62
+    static func ease(_ t:Double)->Double { DesignEase.bezier(min(1,max(0,t)),0.22,1,0.36,1) }
+    static func out(_ t:Double)->Double { DesignEase.bezier(min(1,max(0,t)),0.33,0,0.67,1) }
+    /// A tab's look `t` seconds in, by its place from the chosen tab: how opaque, how far to its side, and whether its
+    /// label shows (the chosen one's travels as a copy).
+    static func tab(_ place:Int,_ fold:DiscordStudio.Fold,at t:Double)->(opacity:Double,shift:CGFloat,label:Bool) {
+        let away=Double(abs(place)),side=CGFloat(place.signum())
+        if fold.opening {
+            if place == 0 { return (1-out((t-0.04)/0.22),0,false) }
+            let q=out((t-(away-1)*0.024)/0.24)
+            return (1-q,side*12*q,true)
+        }
+        if place == 0 { return (ease((t-0.14)/0.26),0,false) }
+        let q=ease((t-0.16-(away-1)*0.024)/0.34)
+        return (q,side*12*(1-q),true)
+    }
+    /// The breadcrumb's chevron.
+    static func chevron(_ fold:DiscordStudio.Fold,at t:Double)->Double { fold.opening ? ease((t-0.24)/0.26) : 1-out(t/0.16) }
+    /// The title under the breadcrumb: how opaque, how far below its place.
+    static func title(_ fold:DiscordStudio.Fold,at t:Double)->(opacity:Double,rise:CGFloat) {
+        if fold.opening { let q=ease((t-0.09)/0.44);return (q,10*(1-q)) }
+        let q=out(t/0.16)
+        return (1-q,6*q)
+    }
+}
+
+extension EnvironmentValues {
+    /// Seconds into the fold playing (HeaderFold), as FoldClock counts them; its whole length once none is.
+    @Entry var foldTime:Double=HeaderFold.total
+}
+/// SwiftUI's own clock for the fold, handing its time down (foldTime): an animation from one fold's count to the next,
+/// linear over the fold's length. Started by the change that starts the fold, it begins when SwiftUI's animations in
+/// that change do, once the change is built however long that takes (Customize takes more than a frame), so the fold
+/// keeps step with the layout moving under it, as the design's starts once the page is in. Two clocks take turns, so a
+/// fold started while the last one plays starts from its beginning as the design's does; one clock would add the two.
+private struct FoldClock: ViewModifier, Animatable {
+    var odd:Double,even:Double
+    let count:Int
+    init(_ count:Int) { self.count=count;odd=Double((count+1)/2);even=Double(count/2) }
+    var animatableData:AnimatablePair<Double,Double> { get { AnimatablePair(odd,even) } set { odd=newValue.first;even=newValue.second } }
+    func body(content:Content)->some View {
+        let played=count%2 == 1 ? odd-Double((count+1)/2-1) : even-Double(count/2-1)
+        content.environment(\.foldTime,min(1,max(0,played))*HeaderFold.total)
+    }
+}
+extension View {
+    /// The fold's clock over this view, counting the studio's folds. What changes in it as a fold starts doesn't
+    /// animate with the clock (nor with anything else then): its looks come from the time.
+    func foldClock(_ count:Int)->some View {
+        transaction(value:count) { $0.animation=nil }
+            .modifier(FoldClock(count))
+            .animation(.linear(duration:HeaderFold.total),value:count)
+    }
+}
+/// Its content, given the fold's time (foldTime).
+struct FoldTime<Content:View>: View {
+    @Environment(\.foldTime) private var time
+    @ViewBuilder let content:(Double)->Content
+    var body:some View { content(time) }
+}
+
+/// Where "Settings" and "Discord" travel as the header folds, over the whole sheet, with the fold's clock: the fold
+/// is over (and forgotten) once its time has run.
+struct HeaderFoldLayer: View {
+    @Bindable var studio:DiscordStudio
+    var body:some View {
+        FoldTime { t in
+            ZStack(alignment:.topLeading) {
+                if let fold=studio.fold {
+                    HeaderFoldTexts(studio:studio,fold:fold,t:t)
+                    if fold.studio { StudioMorph(studio:studio,fold:fold,t:t) }
+                }
+            }
+            .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+            .allowsHitTesting(false)
+            .onChange(of:t >= HeaderFold.total,initial:true) { _,over in
+                if over,studio.fold?.count == studio.folds { studio.fold=nil }
+            }
+        }
+        .foldClock(studio.folds)
+    }
+}
+/// "Settings" and "Discord" on their way between the header and the breadcrumb (HeaderFold): each as two layers, the
+/// header's look and the breadcrumb's, at the same size and spacing on the way, the one giving way to the other; where
+/// the breadcrumb is, it moves with the bar as the header above it shrinks.
+struct HeaderFoldTexts: View {
+    @Bindable var studio:DiscordStudio
+    let fold:DiscordStudio.Fold
+    let t:Double
+    private struct Look { let size:CGFloat;let tracking:CGFloat;let weight:Int;let color:Color }
+    private static let title=Look(size:28,tracking:-0.8,weight:700,color:DiscordColors.body)
+    private static let tab=Look(size:12,tracking:0,weight:600,color:DiscordColors.bright)
+    private static let link=Look(size:12,tracking:0,weight:600,color:DiscordColors.link)
+    var body:some View {
+        ZStack(alignment:.topLeading) {
+            text(L("Settings"),header:.title,Self.title,link:.settings)
+            text(L("Discord"),header:.tab,Self.tab,link:.discord)
+        }
+    }
+    @ViewBuilder private func text(_ words:String,header:HeaderFold.Text,_ look:Look,link:HeaderFold.Text)->some View {
+        if let top=studio.foldFrames[header],let folded=studio.foldFrames[link] {
+            let p=min(1,max(0,t/HeaderFold.length)),e=HeaderFold.ease(p),k=min(1,max(0,(p-0.12)/0.6))
+            // Opening, the breadcrumb comes up with the bar as the header shrinks; closing, it starts where it was.
+            let from=fold.opening ? top : folded,to=fold.opening ? folded.offsetBy(dx:0,dy:HeaderFold.chrome*(1-e)) : top
+            let a=fold.opening ? look : Self.link,b=fold.opening ? Self.link : look
+            let x=from.minX+(to.minX-from.minX)*e,y=from.midY+(to.midY-from.midY)*e
+            let size=a.size+(b.size-a.size)*e,tracking=a.tracking+(b.tracking-a.tracking)*e
+            ZStack(alignment:.topLeading) {
+                layer(words,a,size:size,tracking:tracking).opacity(1-k)
+                layer(words,b,size:size,tracking:tracking).opacity(k)
+            }
+            .frame(width:0,height:0,alignment:.leading).position(x:x,y:y)
+        }
+    }
+    /// A layer's text, its leading edge at the middle of a frame with no size, its middle across it. Its size goes in
+    /// steps of a 16th of a point, too small to see, so the fonts made on the way are kept for the next fold.
+    private func layer(_ words:String,_ look:Look,size:CGFloat,tracking:CGFloat)->some View {
+        let size=(size*16).rounded()/16
+        return SwiftUI.Text(words).font(look.weight == 700 ? LauncherStyle.font(size,.bold) : Font(SystemFont.nsFont(size,look.weight)))
+            .tracking(tracking).foregroundStyle(look.color).fixedSize()
+            .frame(width:0,height:0,alignment:.leading)
+    }
+}
+
+/// Customize's own morph, with the header's fold (the design's studio morph, 560 ms). Opening, its word travels to the
+/// card's title, its size, spacing and colour becoming the title's on the way (the two crossfading as the header's
+/// texts do), hidden behind the card where it crosses it; the line under the word stays where it was and fades in the
+/// last quarter. Closing, the title travels back to the word, and the line comes back in the last quarter.
+struct StudioMorph: View {
+    @Bindable var studio:DiscordStudio
+    let fold:DiscordStudio.Fold
+    let t:Double
+    static let length=0.56
+    private enum Look { case word,title }
+    var body:some View {
+        // Where its parts were as the fold started, with the moves since worked out on the fold's own clock.
+        let frames=fold.frames
+        if let word=frames[.customize],let title=frames[.cardTitle],let row=frames[.levelRow] {
+            let p=min(1,max(0,t/Self.length)),e=HeaderFold.ease(p),k=min(1,max(0,(p-0.12)/0.6))
+            // How far the layout still has to go (its moves take the header's time and curve): the title rides the
+            // bar as the header folds, and rises in; the word, coming back, rides the tab's page as the header opens
+            // and the stage grows, and drops in (DiscordTab).
+            let left=1-HeaderFold.ease(t/HeaderFold.length),back=(studio.ride.page-22)*left
+            let to=fold.opening ? title.offsetBy(dx:0,dy:HeaderFold.chrome*left+HeaderFold.title(fold,at:t).rise) : word.offsetBy(dx:0,dy:back)
+            let from=fold.opening ? word : title
+            let x=from.minX+(to.minX-from.minX)*e,y=from.midY+(to.midY-from.midY)*e
+            let a:Look=fold.opening ? .word : .title,b:Look=fold.opening ? .title : .word
+            let size=size(a)+(size(b)-size(a))*e,tracking=tracking(a)+(tracking(b)-tracking(a))*e
+            let line=CGRect(x:word.minX,y:row.minY+30,width:word.width,height:3)
+            ZStack(alignment:.topLeading) {
+                ZStack(alignment:.topLeading) {
+                    layer(a,size:size,tracking:tracking).opacity(1-k)
+                    layer(b,size:size,tracking:tracking).opacity(k)
+                }
+                .frame(width:0,height:0,alignment:.leading).position(x:x,y:y)
+                // Hidden where the card is now, as it moves.
+                .mask { BehindCard(card:studio.foldFrames[studio.screen == .home ? .shellHome : .shellEditor]).fill(style:FillStyle(eoFill:true)) }
+                if fold.opening {
+                    MorphFrame().frame(width:line.width,height:line.height).position(x:line.midX,y:line.midY)
+                        .opacity(1-min(1,max(0,(p-0.74)/0.26)))
+                } else {
+                    let q=min(1,max(0,(p-0.74)/0.26))
+                    Underline(custom:true).frame(width:line.width,height:line.height).position(x:line.midX,y:line.midY+back).opacity(q*q*(3-2*q))
+                }
+            }
+        }
+    }
+    private func size(_ look:Look)->CGFloat { look == .word ? 14 : 24 }
+    private func tracking(_ look:Look)->CGFloat { look == .word ? 0 : -0.7 }
+    /// A layer's text, its leading edge at the middle of a frame with no size, its middle across it, its size in a 16th of
+    /// a point's steps (HeaderFoldTexts). The word keeps its ribbon: as it was when the word left, or moving as the
+    /// word's own does when it's coming back.
+    @ViewBuilder private func layer(_ look:Look,size:CGFloat,tracking:CGFloat)->some View {
+        let font=Font(SystemFont.nsFont((size*16).rounded()/16,700))
+        Group {
+            if look == .word {
+                let words=DiscordPresenceLevel.custom.title
+                SwiftUI.Text(words).font(font).tracking(tracking).foregroundStyle(.clear)
+                    .overlay { RibbonLine(rounded:false,still:fold.opening ? fold.at : nil).mask { SwiftUI.Text(words).font(font).tracking(tracking) } }
+            } else {
+                SwiftUI.Text(fold.title).font(font).tracking(tracking).foregroundStyle(DiscordColors.body)
+            }
+        }
+        .fixedSize().frame(width:0,height:0,alignment:.leading)
+    }
+}
+/// Everywhere but the card (filled even-odd): what passes behind it.
+private struct BehindCard: Shape {
+    let card:CGRect?
+    func path(in rect:CGRect)->Path {
+        var path=Path(rect)
+        if let card { path.addRect(card) }
+        return path
+    }
+}
+/// The design's gradient frame (its ring ghost): a point and a half wide, amber through violet, glowing.
+private struct MorphFrame: View {
+    var body:some View {
+        RoundedRectangle(cornerRadius:2).strokeBorder(LinearGradient(stops:DiscordColors.frame,startPoint:.leading,endPoint:.trailing),lineWidth:1.5)
+            .shadow(color:Color(red:1,green:120/255,blue:90/255).opacity(0.3),radius:5)
     }
 }

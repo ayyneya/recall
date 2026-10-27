@@ -17,6 +17,8 @@ enum LauncherStyle {
     /// The main window's smallest size (Main.swift): tall enough for a large pop-up under the
     /// title bar, and the window's starting height.
     static let windowMinimum=CGSize(width:540,height:800)
+    /// The sheets' own coordinate space, where Settings measures what travels as its header folds.
+    static let sheetSpace="launcherSheet"
     static func font(_ size:CGFloat, _ weight:Font.Weight = .regular) -> Font {
         .system(size:size,weight:weight)
     }
@@ -198,12 +200,19 @@ struct LauncherTabs<Tab:Hashable & Identifiable>: View {
     let symbol:(Tab)->String
     /// The chosen tab's icon colour when it isn't the accent (Discord's own blue).
     var tint:(Tab)->Color?={ _ in nil }
+    /// Each tab's look by its place from the chosen one (0 is the chosen): how opaque, how far sideways, and whether its
+    /// label shows (Settings' header folding away, its label travelling as a copy).
+    var look:((Int)->(opacity:Double,shift:CGFloat,label:Bool))?=nil
+    /// Where the chosen tab's label is, in the sheet (LauncherStyle.sheetSpace).
+    var chosenLabel:((CGRect)->Void)?=nil
     @Environment(\.colorScheme) private var scheme
     var body:some View {
         HStack(spacing:spacing) {
             ForEach(tabs) { tab in
                 let selected=showsSelection && selection == tab
                 let shape=RoundedRectangle(cornerRadius:14)
+                let place=(tabs.firstIndex(of:tab) ?? 0)-(tabs.firstIndex(of:selection) ?? 0)
+                let shown:(opacity:Double,shift:CGFloat,label:Bool)=look?(place) ?? (opacity:1,shift:0,label:true)
                 Button { selection=tab } label: {
                     // The design's tab: the others dimmed, the chosen one on a raised tile.
                     VStack(spacing:5) {
@@ -214,6 +223,8 @@ struct LauncherTabs<Tab:Hashable & Identifiable>: View {
                             .foregroundStyle(selected ? AnyShapeStyle(tint(tab) ?? LauncherStyle.accent) : AnyShapeStyle(.secondary))
                         Text(title(tab)).designFont(12,selected ? .semibold : .medium)
                             .foregroundStyle(selected ? AnyShapeStyle(DiscordColors.bright) : AnyShapeStyle(.secondary))
+                            .opacity(shown.label ? 1 : 0)
+                            .onGeometryChange(for:CGRect?.self) { selected ? $0.frame(in:.named(LauncherStyle.sheetSpace)) : nil } action:{ if let frame=$0 { chosenLabel?(frame) } }
                     }.frame(width:width,height:54).opacity(selected ? 1 : 0.55)
                         .background {
                             if selected {
@@ -221,6 +232,7 @@ struct LauncherTabs<Tab:Hashable & Identifiable>: View {
                             }
                         }.contentShape(shape)
                 }.buttonStyle(.plain).accessibilityLabel(title(tab)).accessibilityAddTraits(selected ? .isSelected : [])
+                .opacity(shown.opacity).offset(x:shown.shift)
             }
         }
     }
