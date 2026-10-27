@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 @MainActor @Observable
 final class AppModel {
     enum Screen: String, CaseIterable { case welcome, moveApp, checking, battleNet, readyToInstall, preparing, launching, installer, ready, running, driveMissing, failure }
-    enum Sheet: String, Identifiable { case settings, help, about, uninstall, update, whatsNew, shaderUpdate, china, korea, changeRegion, otherInstallation; var id: String { rawValue } }
+    enum Sheet: String, Identifiable { case settings, help, about, uninstall, update, whatsNew, shaderUpdate, china, korea, changeRegion, otherInstallation, highPrecision; var id: String { rawValue } }
     enum UninstallState: Equatable { case idle, working, done(appRemoved: Bool), failed(String) }
     enum UpdateState: Equatable { case idle, checking, upToDate, available(AvailableUpdate), downloading(Double), installing, failed(String) }
     var uninstall: UninstallState = .idle
@@ -256,14 +256,33 @@ final class AppModel {
     /// How Overwatch gets the mouse (Settings › General › Mouse; worker: launch --mouse). Standard is
     /// 1.5's: clicks from Apple's mouse input for games, in order with its movement (the contract's
     /// "precise"). Classic is 1.4's clicks and timing, keeping 1.5's stand-in when that input goes
-    /// quiet, for players who feel 1.5 changed their mouse (REC-57). High-precision, experimental,
-    /// reads the mouse's own reports instead, which that input drops some of in game; it needs Input
-    /// Monitoring (InputMonitoring), and without it Standard's input stays (REC-52). Standard unless
-    /// the player chooses (owner, October 24; setup doesn't ask). Battle.net carries it from when it
-    /// opens, like the HUD.
+    /// quiet, for players who feel 1.5 changed their mouse (REC-57). High-precision, recommended since
+    /// 1.6.1, reads the mouse's own reports instead, which that input drops some of in game; it needs
+    /// Input Monitoring (InputMonitoring), and without it Standard's input stays (REC-52). Standard
+    /// unless the player chooses (owner, October 24; setup doesn't ask), and the home screen invites
+    /// players with a mouse to choose High-precision (HighPrecisionInvite, REC-64). Battle.net
+    /// carries it from when it opens, like the HUD.
     enum MouseInput:String, CaseIterable { case standard, classic, highPrecision="high-precision" }
     var mouseInput=MouseInput(rawValue:UserDefaults.standard.string(forKey:"mouseInput") ?? "") ?? .standard {
-        didSet { UserDefaults.standard.set(mouseInput.rawValue,forKey:"mouseInput") }
+        didSet {
+            UserDefaults.standard.set(mouseInput.rawValue,forKey:"mouseInput")
+            // A player who tried High-precision and went back isn't invited again.
+            if oldValue == .highPrecision && mouseInput != .highPrecision { highPrecisionInviteClosed=true }
+        }
+    }
+    /// At most how many times a second Overwatch is sent the mouse's movement (Settings › General ›
+    /// Mouse › Advanced; worker: launch --mouse-rate; REC-63). The window driver adds up what comes in
+    /// between, so none is lost, only later. Every report unless the player lowers it (owner, October
+    /// 25: at 4,000 Hz it brought movement 1.6 ms sooner than 1.6.0's 1,000 a second, at no FPS cost).
+    /// Standard and High-precision only: Classic keeps 1.4's timing.
+    enum MouseRate:String, CaseIterable {
+        case all, perSecond2000="2000", perSecond1000="1000", perSecond500="500", perSecond250="250"
+        /// The slider's stops, fewest first; All at the right end, as Shader memory's.
+        static var stops:[MouseRate] { allCases.reversed() }
+        var perSecond:Int? { Int(rawValue) }
+    }
+    var mouseRate=MouseRate(rawValue:UserDefaults.standard.string(forKey:"mouseRate") ?? "") ?? .all {
+        didSet { UserDefaults.standard.set(mouseRate.rawValue,forKey:"mouseRate") }
     }
     /// MetalFX upscaling (worker: launch --metalfx, portable_metalfx.h): Overwatch offers NVIDIA
     /// DLSS in its Video settings, and Recall runs it on Apple's MetalFX. Off by default. Like the
@@ -325,6 +344,35 @@ final class AppModel {
         didSet { UserDefaults.standard.set(koreanTipDismissed,forKey:"koreanTipDismissed") }
     }
     var showKoreanTip:Bool { nexonBuild && !koreanSupport && !koreanTipDismissed }
+    /// The home screen's High-precision card (HighPrecisionInvite): closed for good, macOS's Input
+    /// Monitoring answer and whether a mouse is connected, both looked at again whenever the
+    /// player comes back to Recall (System Settings) and, for the mouse, when one connects.
+    var highPrecisionInviteClosed=UserDefaults.standard.bool(forKey:"highPrecisionInviteClosed") {
+        didSet { UserDefaults.standard.set(highPrecisionInviteClosed,forKey:"highPrecisionInviteClosed") }
+    }
+    var inputMonitoring=InputMonitoring.access
+    var mouseConnected=InputMonitoring.mouseConnected
+    var highPrecisionInvite:HighPrecisionInvite? {
+        if isPreview { return previewInvite }
+        return HighPrecisionInvite.stage(closed:highPrecisionInviteClosed,gameInstalled:gameInstalled,highPrecision:mouseInput == .highPrecision,
+                                         access:inputMonitoring,mouseConnected:mouseConnected)
+    }
+    /// A preview's card (--preview-high-precision), which leaves the player's settings alone.
+    var previewInvite:HighPrecisionInvite?
+    /// The High-precision explanation's Turn On (HighPrecisionMouseSheet), from Settings or the
+    /// home screen: chooses it, then shows macOS's prompt the first time; macOS asks only once,
+    /// so after a no, System Settings opens where Recall is switched on.
+    func turnOnHighPrecision() {
+        guard !isPreview else { previewInvite = .permission;return }
+        mouseInput = .highPrecision
+        switch InputMonitoring.access {
+        case .undecided: InputMonitoring.ask()
+        case .denied: NSWorkspace.shared.open(InputMonitoring.privacySettings)
+        case .allowed: break
+        }
+        inputMonitoring=InputMonitoring.access
+    }
+    func closeHighPrecisionInvite() { if isPreview { previewInvite=nil } else { highPrecisionInviteClosed=true } }
     /// Choose your Battle.net (BattleNetChoice.swift), before Battle.net installs: what the screen
     /// shows, filled in from the Mac, and what setup installs. Setup hands it to the worker
     /// (battlenet), which keeps it in state.json from then on.
@@ -649,6 +697,8 @@ final class AppModel {
     private var mountObserver: NSObjectProtocol?
     private var quitObserver: NSObjectProtocol?
     private var runningObservation: NSKeyValueObservation?
+    private var activeObserver: NSObjectProtocol?
+    @ObservationIgnored private var mouseWatch: InputMonitoring.MouseWatch?
     var title: String {
         switch screen {
         case .welcome: return Brand.name
@@ -776,6 +826,14 @@ final class AppModel {
         discordPresence.sessionEnded={ [career] in career.sessionEnded($0) }
         runningObservation=NSWorkspace.shared.observe(\.runningApplications) { [weak self] _,_ in
             Task { @MainActor in self?.runningAppsChanged() }
+        }
+        // Back from System Settings with Input Monitoring changed, or a mouse plugged in or out
+        // (the High-precision card).
+        activeObserver=NotificationCenter.default.addObserver(forName:NSApplication.didBecomeActiveNotification,object:nil,queue:.main) { [weak self] _ in
+            Task { @MainActor in self?.inputMonitoring=InputMonitoring.access;self?.mouseConnected=InputMonitoring.mouseConnected }
+        }
+        mouseWatch=InputMonitoring.MouseWatch { [weak self] in
+            Task { @MainActor in self?.mouseConnected=InputMonitoring.mouseConnected }
         }
         // Opened from the disk image: move to Applications before anything else.
         if AppLocation.needsMove(Bundle.main.bundleURL) { prepareMove();return }
@@ -1066,6 +1124,8 @@ final class AppModel {
         let args=CommandLine.arguments
         if let i=args.firstIndex(of:"--preview-macos"),args.indices.contains(i+1) { macOS=args[i+1] }
         if args.contains("--preview-korean") { nexonBuild=true;state["korean_support"]=false }
+        // The High-precision card: its invitation, or the reminder to finish macOS's permission.
+        if let i=args.firstIndex(of:"--preview-high-precision"),args.indices.contains(i+1) { previewInvite=HighPrecisionInvite(rawValue:args[i+1]) }
         // The failure screen for another code, e.g. directory_creation_failed (REC-54).
         if let i=args.firstIndex(of:"--preview-failure"),args.indices.contains(i+1) { failure=SetupFailure(code:args[i+1]) }
         // The first-matches tip at a number of learned shaders (FirstMatchTip).
@@ -1302,7 +1362,7 @@ final class AppModel {
         do {
             launchEvents=try await service.run("launch",(play ? ["--play","1"] : [])+["--metal-hud",metalHUD ? "1" : "0",
                 "--metalfx",metalFXUpscaling ? "1" : "0","--sharpening",metalFXSharpening.rawValue,"--game-mode",gameMode ? "1" : "0",
-                "--mouse",mouseInput.rawValue] +
+                "--mouse",mouseInput.rawValue,"--mouse-rate",mouseRate.rawValue] +
                 logging.launchArguments(custom:loggingCustom),event:receive)
         } catch {
             guard stopLaunchWait else { throw error }
@@ -1663,18 +1723,19 @@ final class AppModel {
         // Schema 4 (1.5.0): other_apps, what the busy note saw at the last launch and now (REC-5).
         // Schema 5 (1.6.0): game_mode; logging.setting may name several presets (REC-51); mouse_input
         // and input_monitoring (REC-52, REC-57).
+        // Schema 6 (1.6.1): mouse_rate, "all" or the most a second (REC-63); Classic ignores it.
         let fresh=loadChecked.map { Date().timeIntervalSince($0) < 15 } ?? false
         let otherApps:[String:Any]=["at_last_launch":launchLoad ?? "none","now":fresh ? macLoad.report as Any : "not_checked"]
-        // Schema 6 (1.6.0): discord_presence, the level, whether Discord answered and whether it took the last card (DiscordPresence.swift).
-        // Schema 7 (1.6.0): its career_profile (Full), whether a BattleTag is set and OverFast's last answer, never the tag.
-        // Schema 8 (1.6.0): its power (Settings › Discord's switch), the card in use (a ready-made one's id, or "own") and
-        // how many cards are the player's own, never their names or what they show.
+        // Schema 7 (the Discord card): discord_presence, the level, its power (Settings › Discord's switch), whether
+        // Discord answered and whether it took the last card (DiscordPresence.swift), the card in use (a ready-made
+        // one's id, or "own") and how many cards are the player's own, never their names or what they show; its
+        // career_profile (Full), whether a BattleTag is set and OverFast's last answer, never the tag.
         let profile:[String:Any]=["battletag_set":!battleTag.isEmpty,"last_code":career.lastCode.map { $0 as Any } ?? "none"]
         let shelf=discordStudio.shelf
         let discord:[String:Any]=["level":discordPresenceLevel.rawValue,"power":presencePower ? "on" : "off","allowed":presenceAllowed,"connected":discordPresence.connected,
                                   "accepted":discordPresence.accepted,"card":shelf.inUse.readyMade ? shelf.inUse.id : "own","own_cards":shelf.mine.count,"career_profile":profile]
-        let data:[String:Any]=["schema":8,"discord_presence":discord,"game_mode":gameMode ? "on" : "off",
-                                "mouse_input":mouseInput.rawValue,"input_monitoring":InputMonitoring.access.rawValue,
+        let data:[String:Any]=["schema":7,"discord_presence":discord,"game_mode":gameMode ? "on" : "off",
+                                "mouse_input":mouseInput.rawValue,"mouse_rate":mouseRate.rawValue,"input_monitoring":InputMonitoring.access.rawValue,
                                 "other_apps":otherApps,"logging":logs,"battlenet":battleNet,"app_language":AppLanguage.current,"default_browser":browser,"main_display":display,"app_version":release?.appVersion ?? "unknown","runtime_version":state["active_runtime"] as? String ?? "not_installed","macos":ProcessInfo.processInfo.operatingSystemVersionString,"memory_gib":ProcessInfo.processInfo.physicalMemory>>30,"architecture":"arm64","free_gib":freeBytes>>30,"game_installed":gameInstalled,"display_resolution":"\(resolution.width)x\(resolution.height)","metalfx_upscaling":metalFXUpscaling ? "on" : "off","metalfx_sharpening":metalFXSharpening.rawValue,"install_location":InstallLocation.isStandard(root) ? "default" : (InstallLocation.isInternal(root) ? "other_internal" : "external"),"recent_stages":lastEvents,"last_error":failure.reportCode,"shaders":ShaderRecord.read(root:root),"shader_memory":shaderMemory]
         report=String(data:(try? JSONSerialization.data(withJSONObject:data,options:[.prettyPrinted,.sortedKeys])) ?? Data(),encoding:.utf8) ?? ""
     }
