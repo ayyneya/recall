@@ -13,31 +13,32 @@ struct ProfilePage: View {
     @FocusState private var typing:Bool
     var body:some View {
         let state=studio.profileState
-        VStack(alignment:.leading,spacing:12) {
+        // The design's column: when the rows don't fit, the BattleTag's card and both boxes give up height (the
+        // list scrolling inside its box), as its flexbox shrinks them.
+        FlexColumn(spacing:12) {
             Text(state == .none ? L("Recall can read your public career profile from your BattleTag. Full and Customize use it for ranks, records and heroes. Only the BattleTag is sent, to OverFast.")
                                 : L("Everything Recall reads from your BattleTag, and where it shows on your card. It looks again after you quit Overwatch."))
-                .font(LauncherStyle.font(12.5)).lineHeight(1.5,size:12.5).foregroundStyle(DiscordColors.ink(0.65)).fixedSize(horizontal:false,vertical:true)
-            if studio.tagEditing { tagField } else if !studio.battleTag.isEmpty { tagCard }
+                .designFont(12.5,line:12.5*1.5).foregroundStyle(DiscordColors.ink(0.65)).fixedSize(horizontal:false,vertical:true)
+            // The card comes back at once, as the design's does.
+            if studio.tagEditing { tagField } else if !studio.battleTag.isEmpty { tagCard.transition(.identity) }
             if studio.tagEditing && !studio.battleTag.isEmpty {
                 HStack(spacing:10) {
                     Text(L("Or stop using a BattleTag. Full and Customize then show only what the game’s log knows."))
-                        .font(LauncherStyle.font(11.5)).lineHeight(1.4,size:11.5).foregroundStyle(DiscordColors.ink(0.5)).frame(maxWidth:.infinity,alignment:.leading)
+                        .designFont(11.5,line:11.5*1.4).foregroundStyle(DiscordColors.ink(0.5)).frame(maxWidth:.infinity,alignment:.leading)
                     PageButton(title:L("Remove"),danger:true) { studio.removeBattleTag() }
-                }.padding(.leading,14).padding(.trailing,8).padding(.top,-4).transition(.opacity)
+                }.padding(.leading,14).padding(.trailing,8).padding(.top,-4).popIn(0.28).transition(.identity)
             }
             if state == .hidden && !studio.battleTag.isEmpty { privateNotice }
             SectionLabel(text:state == .shown ? L("WHAT RECALL READS") : state == .hidden ? L("WHAT IT WOULD READ") : L("WHAT IT CAN READ"))
-            // As tall as its rows, scrolling only when they don't fit.
-            ViewThatFits(in:.vertical) {
-                factList
-                ScrollView { factList }.scrollIndicators(.never)
-            }
-            .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16,style:.continuous))
-            .clipShape(RoundedRectangle(cornerRadius:16,style:.continuous))
+            ScrollView { factList }.scrollIndicators(.never)
+                .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16))
+                .clipShape(RoundedRectangle(cornerRadius:16)).flexShrink()
             SectionLabel(text:L("NOT ON THE CARD"))
             FactRow(studio:studio,row:studio.notOnCard(),index:nil)
-                .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16,style:.continuous))
-            Spacer(minLength:0)
+                .frame(minHeight:0,alignment:.top)
+                .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16))
+                .clipShape(RoundedRectangle(cornerRadius:16)).flexShrink()
+            Color.clear.flexGrow()
             HStack { Spacer();PageButton(title:L("Done")) { studio.closePage() }.keyboardShortcut(.cancelAction) }
         }
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.3),value:studio.tagEditing)
@@ -55,17 +56,16 @@ struct ProfilePage: View {
                 if studio.profileState == .hidden { DesignIcon("lucide:lock",size:18).foregroundStyle(DiscordColors.ink(0.55)) }
                 else { RemoteImage(url:studio.profile?.identity?.avatar) { DesignIcon("rc:user-fill",size:20).foregroundStyle(DiscordColors.ink(0.4)) } }
             }
-            .frame(width:40,height:40).background(DiscordColors.tile).clipShape(RoundedRectangle(cornerRadius:10,style:.continuous))
+            .frame(width:40,height:40).background(DiscordColors.tile).clipShape(RoundedRectangle(cornerRadius:10))
             VStack(alignment:.leading,spacing:2) {
-                Text(verbatim:studio.battleTag).font(LauncherStyle.font(15,.bold)).normalLines(size:15).foregroundStyle(DiscordColors.bright)
-                Text(studio.profileStatus).font(LauncherStyle.font(11.5)).normalLines(size:11.5).foregroundStyle(DiscordColors.ink(0.55)).lineLimit(1)
-            }
-            Spacer(minLength:8)
+                Text(verbatim:studio.battleTag).designFont(15,.bold).foregroundStyle(DiscordColors.body)
+                Text(studio.profileStatus).designFont(11.5).foregroundStyle(DiscordColors.ink(0.55)).lineLimit(1)
+            }.frame(maxWidth:.infinity,alignment:.leading)
             PageButton(title:L("Look again"),small:true) { studio.actions.lookAgain() }.disabled(studio.lookingUp)
             PageButton(title:L("Change"),small:true) { studio.tagDraft=studio.battleTag;studio.tagError=false;studio.tagEditing=true }
         }
-        .padding(.leading,12).padding(.trailing,10).frame(height:62)
-        .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16,style:.continuous))
+        .padding(.leading,12).padding(.trailing,10).frame(minHeight:40,idealHeight:62,maxHeight:62)
+        .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16)).flexShrink()
     }
     /// Typing the BattleTag: Look up (or Return) checks it's a BattleTag and looks the profile up.
     private var tagField:some View {
@@ -76,36 +76,35 @@ struct ProfilePage: View {
                 .focused($typing).onAppear { typing=true }
                 .onSubmit { studio.saveBattleTag() }.onExitCommand { studio.cancelBattleTag() }
                 .onChange(of:studio.tagDraft) { studio.tagError=false }
-            if studio.tagError { Text(L("Name#1234")).font(LauncherStyle.font(11.5)).foregroundStyle(Color(red:1,green:130/255,blue:118/255)) }
+            if studio.tagError { Text(L("Name#1234")).designFont(11.5).foregroundStyle(Color(red:1,green:130/255,blue:118/255)) }
             Button(L("Cancel")) { studio.cancelBattleTag() }.buttonStyle(QuietButtonStyle())
-            FillButton(title:L("Look up"),height:30,size:12,radius:8) { studio.saveBattleTag() }
+            FillButton(title:L("Look up"),height:30,size:12,radius:8,padding:12,weight:.bold) { studio.saveBattleTag() }
         }
         .padding(.leading,14).padding(.trailing,8).frame(height:52)
-        .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16,style:.continuous))
-        .overlay { RoundedRectangle(cornerRadius:16,style:.continuous).strokeBorder(studio.tagError ? Color(red:1,green:99/255,blue:88/255).opacity(0.7) : DiscordColors.pick.opacity(0.55),lineWidth:1) }
-        .transition(.scale(scale:0.97).combined(with:.opacity))
+        .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16))
+        .overlay { RoundedRectangle(cornerRadius:16).strokeBorder(studio.tagError ? Color(red:1,green:99/255,blue:88/255).opacity(0.7) : DiscordColors.pick.opacity(0.55),lineWidth:1) }
+        .popIn(0.28).transition(.identity)
     }
     private var privateNotice:some View {
         HStack(alignment:.top,spacing:10) {
             DesignIcon("lucide:eye-off",size:15).foregroundStyle(Color(red:1,green:200/255,blue:120/255)).padding(.top,1)
             VStack(alignment:.leading,spacing:3) {
-                Text(L("Overwatch keeps this profile private")).fontWeight(.semibold).foregroundStyle(DiscordColors.bright).lineHeight(1.45,size:12)
+                Text(L("Overwatch keeps this profile private")).designFont(12,.semibold,line:12*1.45).foregroundStyle(DiscordColors.body)
                 Text(L("So ranks, records and heroes can’t show. Your card still shows what the game’s log knows. To make it public, in Overwatch: Options › Social › Career Profile Visibility › Public. Then Look again."))
-                    .foregroundStyle(DiscordColors.ink(0.65)).lineHeight(1.45,size:12).fixedSize(horizontal:false,vertical:true)
+                    .foregroundStyle(DiscordColors.ink(0.65)).cssLines(NSFont.systemFont(ofSize:12),12*1.45).fixedSize(horizontal:false,vertical:true)
             }.font(LauncherStyle.font(12))
         }
         // The design's padding inside its one-point border.
         .padding(.horizontal,14).padding(.vertical,12).frame(maxWidth:.infinity,alignment:.leading)
-        .background(Color(red:1,green:196/255,blue:92/255).opacity(0.08),in:RoundedRectangle(cornerRadius:14,style:.continuous))
-        .overlay { RoundedRectangle(cornerRadius:14,style:.continuous).strokeBorder(Color(red:1,green:196/255,blue:92/255).opacity(0.18),lineWidth:1) }
+        .background(Color(red:1,green:196/255,blue:92/255).opacity(0.08),in:RoundedRectangle(cornerRadius:14))
+        .overlay { RoundedRectangle(cornerRadius:14).strokeBorder(Color(red:1,green:196/255,blue:92/255).opacity(0.18),lineWidth:1) }
     }
 }
 /// "WHAT RECALL READS": a small heading over a box.
 struct SectionLabel: View {
     let text:String
     var body:some View {
-        // As tall as the design's line of it (12: the browser rounds the font's descent down where SwiftUI rounds it up).
-        Text(text).font(LauncherStyle.font(10.5,.bold)).tracking(0.5).foregroundStyle(DiscordColors.ink(0.4)).frame(height:12,alignment:.top)
+        Text(text).designFont(10.5,.bold).tracking(10.5*0.05).foregroundStyle(DiscordColors.ink(0.4))
             .padding(.horizontal,4).padding(.bottom,-4)
     }
 }
@@ -118,11 +117,11 @@ struct PageButton: View {
     @State private var inside=false
     var body:some View {
         Button(action:action) {
-            Text(title).font(LauncherStyle.font(small || danger ? 12 : 13,small || danger ? .semibold : .medium))
+            Text(title).designFont(small || danger ? 12 : 13,small || danger ? .semibold : .medium)
                 .foregroundStyle(danger ? Color(red:1,green:110/255,blue:100/255) : small ? DiscordColors.bright.opacity(0.88) : DiscordColors.bright)
                 .padding(.horizontal,small || danger ? 10 : 16).frame(height:small || danger ? 26 : 30)
                 .background(danger ? Color(red:1,green:69/255,blue:58/255).opacity(inside ? 0.18 : 0.12) : DiscordColors.veil(small ? (inside ? 0.13 : 0.08) : 0.1),
-                            in:RoundedRectangle(cornerRadius:small || danger ? 7 : 15,style:.continuous))
+                            in:RoundedRectangle(cornerRadius:small || danger ? 7 : 15))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).onHover { inside=$0 }
     }
@@ -130,8 +129,8 @@ struct PageButton: View {
 private struct QuietButtonStyle: ButtonStyle {
     @State private var inside=false
     func makeBody(configuration:Configuration)->some View {
-        configuration.label.font(LauncherStyle.font(12,.semibold)).foregroundStyle(inside ? DiscordColors.bright : DiscordColors.ink(0.7))
-            .padding(.horizontal,10).frame(height:30).background(inside ? DiscordColors.veil(0.08) : .clear,in:RoundedRectangle(cornerRadius:8,style:.continuous))
+        configuration.label.designFont(12,.semibold).foregroundStyle(inside ? DiscordColors.bright : DiscordColors.ink(0.7))
+            .padding(.horizontal,10).frame(height:30).background(inside ? DiscordColors.veil(0.08) : .clear,in:RoundedRectangle(cornerRadius:8))
             .contentShape(Rectangle()).onHover { inside=$0 }
     }
 }
@@ -161,23 +160,25 @@ private struct FactRow: View {
                 HStack(spacing:12) {
                     Group {
                         if shown,let image=row.image { RemoteImage(url:image) { Color.clear } } else { DesignIcon(row.icon,size:15).foregroundStyle(DiscordColors.ink(0.7)) }
-                    }.frame(width:28,height:28).background(DiscordColors.veil(0.06)).clipShape(RoundedRectangle(cornerRadius:8,style:.continuous))
+                    }.frame(width:28,height:28).background(DiscordColors.veil(0.06)).clipShape(RoundedRectangle(cornerRadius:8))
                     VStack(alignment:.leading,spacing:3) {
                         HStack(spacing:5) {
-                            Text(row.name).font(LauncherStyle.font(12.5,.semibold)).foregroundStyle(DiscordColors.bright).fixedSize()
+                            Text(row.name).designFont(12.5,.semibold).foregroundStyle(DiscordColors.body).fixedSize()
                             Spacer(minLength:0)
                             ForEach(row.places,id:\.self) { place in
-                                Text(place).font(LauncherStyle.font(10,.semibold)).foregroundStyle(DiscordColors.ink(0.55))
-                                    .padding(.horizontal,6).frame(height:17).background(DiscordColors.veil(0.06),in:RoundedRectangle(cornerRadius:5,style:.continuous))
+                                Text(place).designFont(10,.semibold).foregroundStyle(DiscordColors.ink(0.55))
+                                    .padding(.horizontal,6).frame(height:17).background(DiscordColors.veil(0.06),in:RoundedRectangle(cornerRadius:5))
                             }
                         }
                         if shown {
-                            if !open { factLine.transition(.opacity) }
+                            // Open, the line folds away (its gap stays), as the design's does.
+                            factLine.frame(height:open ? 0 : 18,alignment:.top).clipped()
+                                .animation(.timingCurve(0.25,0.1,0.25,1,duration:0.25)) { $0.opacity(open ? 0 : 1) }
                         } else {
                             HStack(spacing:4) {
                                 if studio.profileState == .hidden { DesignIcon("lucide:lock",size:11) }
-                                Text(studio.profileState == .hidden ? L("Hidden by Overwatch") : studio.battleTag.isEmpty ? L("Needs your BattleTag") : L("Not found yet"))
-                            }.font(LauncherStyle.font(11.5)).normalLines(size:11.5).foregroundStyle(DiscordColors.ink(0.4))
+                                Text(studio.profileState == .hidden ? L("Hidden by Overwatch") : studio.battleTag.isEmpty ? L("Needs your BattleTag") : L("Not found yet")).designFont(11.5)
+                            }.foregroundStyle(DiscordColors.ink(0.4))
                         }
                     }
                     if shown && index != nil {
@@ -186,7 +187,9 @@ private struct FactRow: View {
                 }
                 .padding(.leading,14).padding(.trailing,12).padding(.vertical,7).frame(minHeight:52).contentShape(Rectangle())
             }.buttonStyle(.plain).allowsHitTesting(shown && index != nil)
-            if open { details.transition(.opacity.combined(with:.offset(y:-4))) }
+            if open {
+                details.popIn(0.32).transition(.identity)
+            }
         }
         .opacity(shown ? 1 : 0.7)
         // Each row has the design's one-point line over it (clear over the first).
@@ -197,19 +200,24 @@ private struct FactRow: View {
     private var factLine:some View {
         Color.clear.frame(height:18).frame(maxWidth:.infinity)
             .overlay(alignment:.leading) {
-                HStack(spacing:4) {
-                    ForEach(Array(row.facts.enumerated()),id:\.offset) { index,fact in
-                        if index > 0 { Text(verbatim:"·").opacity(0.4).padding(.horizontal,2) }
-                        Text(verbatim:fact.text)
-                        if let mark=fact.mark { Text(verbatim:mark).font(.discord(11)).tracking(-1).foregroundStyle(fact.markColor ?? DiscordColors.ink(0.45)) }
-                        if let after=fact.after { Text(verbatim:after) }
-                        if let sub=fact.sub { Text(verbatim:sub).opacity(0.55) }
-                    }
-                }
-                .font(.discord(12)).foregroundStyle(DiscordColors.ink(0.62)).lineLimit(1).fixedSize()
+                factText.discordFont(12,line:18).foregroundStyle(DiscordColors.ink(0.62)).lineLimit(1).fixedSize()
             }
             .clipped()
             .mask { HStack(spacing:0) { Color.black;LinearGradient(colors:[.black,.clear],startPoint:.leading,endPoint:.trailing).frame(width:44) } }
+    }
+    /// The facts as one run of text, as the browser sets the design's line of them: its gaps (4 points, and 2 more
+    /// each side of a dot) don't round to the pixel one by one as separate views' widths would, drifting along.
+    private var factText:Text {
+        func gap(_ width:CGFloat)->Text { Text(Image(size:CGSize(width:width,height:1)) { _ in }) }
+        var line=Text(verbatim:"")
+        for (index,fact) in row.facts.enumerated() {
+            if index > 0 { line=line.followed(by:gap(6)).followed(by:Text(verbatim:"·").foregroundStyle(DiscordColors.ink(0.62*0.4))).followed(by:gap(6)) }
+            line=line.followed(by:Text(verbatim:fact.text))
+            if let mark=fact.mark { line=line.followed(by:gap(4)).followed(by:Text(verbatim:mark).font(.discord(11)).tracking(-1).foregroundStyle(fact.markColor ?? DiscordColors.ink(0.45))) }
+            if let after=fact.after { line=line.followed(by:gap(4)).followed(by:Text(verbatim:after)) }
+            if let sub=fact.sub { line=line.followed(by:gap(4)).followed(by:Text(verbatim:sub).foregroundStyle(DiscordColors.ink(0.62*0.55))) }
+        }
+        return line
     }
     private var details:some View {
         VStack(alignment:.leading,spacing:9) {
@@ -217,22 +225,22 @@ private struct FactRow: View {
                 ForEach(Array(row.facts.enumerated()),id:\.offset) { _,fact in
                     HStack(spacing:5) {
                         if let image=fact.image { RemoteImage(url:image) { DiscordColors.tile }.frame(width:19,height:19).background(DiscordColors.tile).clipShape(Circle()) }
-                        Text(verbatim:fact.text)
-                        if let mark=fact.mark { Text(verbatim:mark).font(.discord(11)).tracking(-1).foregroundStyle(fact.markColor ?? DiscordColors.ink(0.45)) }
-                        if let after=fact.after { Text(verbatim:after) }
-                        if let sub=fact.sub { Text(verbatim:sub).font(LauncherStyle.font(10.5)).foregroundStyle(DiscordColors.ink(0.45)) }
+                        Text(verbatim:fact.text).discordFont(12.5)
+                        if let mark=fact.mark { Text(verbatim:mark).discordFont(11).tracking(-1).foregroundStyle(fact.markColor ?? DiscordColors.ink(0.45)) }
+                        if let after=fact.after { Text(verbatim:after).discordFont(12.5) }
+                        if let sub=fact.sub { Text(verbatim:sub).designFont(10.5).foregroundStyle(DiscordColors.ink(0.45)) }
                     }
-                    .font(.discord(12.5)).foregroundStyle(DiscordColors.text)
+                    .foregroundStyle(DiscordColors.text)
                     .padding(.leading,fact.image == nil ? 9 : 4).padding(.trailing,9).frame(height:26)
-                    .background(DiscordColors.veil(0.055),in:RoundedRectangle(cornerRadius:8,style:.continuous))
+                    .background(DiscordColors.veil(0.055),in:RoundedRectangle(cornerRadius:8))
                 }
             }
-            if let legend=row.legend { Text(legend).font(LauncherStyle.font(11)).lineHeight(1.45,size:11).foregroundStyle(DiscordColors.ink(0.45)).fixedSize(horizontal:false,vertical:true) }
+            if let legend=row.legend { Text(legend).designFont(11,line:11*1.45).foregroundStyle(DiscordColors.ink(0.45)).fixedSize(horizontal:false,vertical:true) }
             if let sample=row.sample {
                 HStack(spacing:8) {
-                    Text(row.sampleLabel ?? L("On your card")).font(LauncherStyle.font(11)).foregroundStyle(DiscordColors.ink(0.45)).fixedSize()
-                    Text(verbatim:sample).font(.discord(12.5)).foregroundStyle(DiscordColors.text).lineLimit(1)
-                        .padding(.horizontal,9).frame(height:24).background(DiscordColors.card,in:RoundedRectangle(cornerRadius:6,style:.continuous))
+                    Text(row.sampleLabel ?? L("On your card")).designFont(11).foregroundStyle(DiscordColors.ink(0.45)).fixedSize()
+                    Text(verbatim:sample).discordFont(12.5).foregroundStyle(DiscordColors.text).lineLimit(1)
+                        .padding(.horizontal,9).frame(height:24).background(DiscordColors.card,in:RoundedRectangle(cornerRadius:6))
                 }
             }
         }
@@ -246,18 +254,19 @@ struct HistoryPage: View {
     @Bindable var studio:DiscordStudio
     var body:some View {
         let rows=studio.sessionRows()
-        VStack(alignment:.leading,spacing:12) {
+        // As the profile's page: the two boxes give up height when the sessions don't fit.
+        FlexColumn(spacing:12) {
             Text(L("Sessions stay on this Mac so your card can say how today or this week went. Only your BattleTag ever leaves it."))
-                .font(LauncherStyle.font(12.5)).lineHeight(1.5,size:12.5).foregroundStyle(DiscordColors.ink(0.65)).fixedSize(horizontal:false,vertical:true)
+                .designFont(12.5,line:12.5*1.5).foregroundStyle(DiscordColors.ink(0.65)).fixedSize(horizontal:false,vertical:true)
             HStack {
-                Text(L("SESSIONS")).font(LauncherStyle.font(10.5,.bold)).tracking(0.5).foregroundStyle(DiscordColors.ink(0.4)).padding(.horizontal,4)
+                Text(L("SESSIONS")).designFont(10.5,.bold).tracking(10.5*0.05).foregroundStyle(DiscordColors.ink(0.4)).padding(.horizontal,4)
                 Spacer()
                 if studio.erased != nil {
                     UndoEraseButton(studio:studio)
                 } else if rows.isEmpty {
-                    HStack(spacing:5) { DesignIcon("lucide:trash-2",size:12);Text(L("Nothing to erase")) }
-                        .font(LauncherStyle.font(11.5,.semibold)).foregroundStyle(DiscordColors.ink(0.35))
-                        .padding(.leading,8).padding(.trailing,10).frame(height:24).background(DiscordColors.veil(0.04),in:RoundedRectangle(cornerRadius:7,style:.continuous))
+                    HStack(spacing:5) { DesignIcon("lucide:trash-2",size:12);Text(L("Nothing to erase")).designFont(11.5,.semibold) }
+                        .foregroundStyle(DiscordColors.ink(0.35))
+                        .padding(.leading,8).padding(.trailing,10).frame(height:24).background(DiscordColors.veil(0.04),in:RoundedRectangle(cornerRadius:7))
                 } else {
                     HoldToErase(studio:studio,rows:rows.count)
                 }
@@ -265,26 +274,29 @@ struct HistoryPage: View {
             if rows.isEmpty {
                 VStack(spacing:4) {
                     DesignIcon("lucide:shield-check",size:20).foregroundStyle(DiscordColors.ink(0.5)).padding(.bottom,2)
-                    Text(L("Nothing kept on this Mac")).font(LauncherStyle.font(13,.semibold)).foregroundStyle(DiscordColors.bright)
+                    Text(L("Nothing kept on this Mac")).designFont(13,.semibold).foregroundStyle(DiscordColors.body)
                     Text(studio.erased != nil ? L("Ranks and all-time records come back at the next look.") : L("New sessions show up here after you play."))
-                        .font(LauncherStyle.font(11.5)).normalLines(size:11.5).foregroundStyle(DiscordColors.ink(0.5))
+                        .designFont(11.5).foregroundStyle(DiscordColors.ink(0.5))
                 }
                 .frame(maxWidth:.infinity).frame(height:96)
-                .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16,style:.continuous))
+                .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16))
                 .transition(.scale(scale:0.96).combined(with:.opacity))
             } else {
-                SessionList(studio:studio,rows:rows)
+                SessionList(studio:studio,rows:rows).flexShrink()
             }
             SectionLabel(text:L("WHERE IT COMES FROM"))
+            // The design's one-point top edge on each row: clear on the first, which it makes 51 tall; a line on the
+            // second (a button), inside its 50.
             VStack(spacing:0) {
-                sourceRow(icon:"lucide:file-text",name:L("The game’s log"),sub:L("When you played and how many matches; never where you are."),opens:false)
-                Rectangle().fill(DiscordColors.veil(0.05)).frame(height:1)
+                sourceRow(icon:"lucide:file-text",name:L("The game’s log"),sub:L("When you played and how many matches; never where you are."),opens:false).padding(.top,1)
                 Button { studio.openProfile() } label: {
-                    sourceRow(icon:"simple-icons:battledotnet",name:L("Your public profile"),sub:L("Records, heroes and rank. Only your BattleTag is sent."),opens:true)
+                    sourceRow(icon:"simple-icons:battledotnet",name:L("Your public profile"),sub:L("Records, heroes and rank. Only your BattleTag is sent."),opens:true,height:49)
+                        .padding(.top,1).overlay(alignment:.top) { Rectangle().fill(DiscordColors.veil(0.05)).frame(height:1) }
                 }.buttonStyle(.plain)
             }
-            .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16,style:.continuous)).clipShape(RoundedRectangle(cornerRadius:16,style:.continuous))
-            Spacer(minLength:0)
+            .frame(minHeight:0,alignment:.top)
+            .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16)).clipShape(RoundedRectangle(cornerRadius:16)).flexShrink()
+            Color.clear.flexGrow()
             HStack(spacing:8) {
                 ExportButton(studio:studio,enabled:!rows.isEmpty)
                 Spacer()
@@ -293,17 +305,16 @@ struct HistoryPage: View {
         }
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.4),value:rows.isEmpty)
     }
-    private func sourceRow(icon:String,name:String,sub:String,opens:Bool)->some View {
+    private func sourceRow(icon:String,name:String,sub:String,opens:Bool,height:CGFloat=50)->some View {
         HStack(spacing:12) {
-            DesignIcon(icon,size:15).foregroundStyle(DiscordColors.ink(0.6)).frame(width:30,height:30).background(DiscordColors.veil(0.06),in:RoundedRectangle(cornerRadius:8,style:.continuous))
+            DesignIcon(icon,size:15).foregroundStyle(DiscordColors.ink(0.6)).frame(width:30,height:30).background(DiscordColors.veil(0.06),in:RoundedRectangle(cornerRadius:8))
             VStack(alignment:.leading,spacing:1) {
-                Text(name).font(LauncherStyle.font(13,.semibold)).foregroundStyle(DiscordColors.bright)
-                Text(sub).font(LauncherStyle.font(11.5)).normalLines(size:11.5).foregroundStyle(DiscordColors.ink(0.55)).lineLimit(1)
-            }
-            Spacer(minLength:0)
+                Text(name).designFont(13,.semibold).foregroundStyle(DiscordColors.body)
+                Text(sub).designFont(11.5).foregroundStyle(DiscordColors.ink(0.55)).lineLimit(1)
+            }.frame(maxWidth:.infinity,alignment:.leading)
             if opens { DesignIcon("lucide:chevron-right",size:14).foregroundStyle(DiscordColors.ink(0.4)) }
         }
-        .padding(.horizontal,14).frame(height:50).contentShape(Rectangle())
+        .padding(.horizontal,14).frame(height:height).contentShape(Rectangle())
         .rowHover(0,veil:opens ? 0.03 : 0,enabled:opens)
     }
 }
@@ -329,17 +340,16 @@ private struct SessionList: View {
                     let struck=max(0,min(1,studio.eraseProgress*(Double(rows.count)+0.6)-Double(index)*0.9))
                     HStack(spacing:12) {
                         Group { if let image=row.image { RemoteImage(url:image) { DiscordColors.tile } } else { GameIcon() } }
-                            .frame(width:30,height:30).background(row.image == nil ? .clear : DiscordColors.tile).clipShape(RoundedRectangle(cornerRadius:8,style:.continuous))
+                            .frame(width:30,height:30).background(row.image == nil ? .clear : DiscordColors.tile).clipShape(RoundedRectangle(cornerRadius:8))
                         VStack(alignment:.leading,spacing:1) {
-                            Text(row.when).font(LauncherStyle.font(13,.semibold)).foregroundStyle(DiscordColors.bright)
-                            Text(row.what).font(LauncherStyle.font(11.5)).normalLines(size:11.5).foregroundStyle(DiscordColors.ink(0.55)).lineLimit(1)
-                        }
-                        Spacer(minLength:4)
+                            Text(row.when).designFont(13,.semibold).foregroundStyle(DiscordColors.body)
+                            Text(row.what).designFont(11.5).foregroundStyle(DiscordColors.ink(0.55)).lineLimit(1)
+                        }.frame(maxWidth:.infinity,alignment:.leading)
                         HStack(spacing:3) {
                             if row.fromLog { source("lucide:file-text").designTip(L("From the game’s log")) }
                             if row.fromProfile { source("simple-icons:battledotnet").designTip(L("From your public profile")) }
                         }.frame(width:43,alignment:.trailing)
-                        Text(row.result).font(LauncherStyle.font(12,row.resultMove == 0 ? .medium : .bold)).monospacedDigit()
+                        Text(row.result).designFont(12,row.resultMove == 0 ? .medium : .bold).monospacedDigit()
                             .foregroundStyle(row.resultMove > 0 ? Color(red:120/255,green:225/255,blue:160/255) : row.resultMove < 0 ? Color(red:1,green:120/255,blue:108/255) : DiscordColors.ink(0.45))
                             .frame(width:88,alignment:.trailing).lineLimit(1)
                     }
@@ -357,11 +367,10 @@ private struct SessionList: View {
             }
         }
         .scrollIndicators(.never).scrollBounceBehavior(.basedOnSize)
-        .frame(maxHeight:CGFloat(min(rows.count,5))*51)
-        .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16,style:.continuous)).clipShape(RoundedRectangle(cornerRadius:16,style:.continuous))
+        .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16)).clipShape(RoundedRectangle(cornerRadius:16))
     }
     private func source(_ icon:String)->some View {
-        DesignIcon(icon,size:11).foregroundStyle(DiscordColors.ink(0.6)).frame(width:20,height:20).background(DiscordColors.veil(0.06),in:RoundedRectangle(cornerRadius:6,style:.continuous))
+        DesignIcon(icon,size:11).foregroundStyle(DiscordColors.ink(0.6)).frame(width:20,height:20).background(DiscordColors.veil(0.06),in:RoundedRectangle(cornerRadius:6))
     }
 }
 /// Hold for two seconds: a red fill sweeps across (the button trembles harder as it nears the end) and a red line
@@ -380,7 +389,7 @@ private struct HoldToErase: View {
                     label(progress < 0.06 ? L("Hold to erase") : L("Keep holding…"),fore:.white).background(Color(red:1,green:69/255,blue:58/255))
                         .mask(alignment:.leading) { GeometryReader { box in Rectangle().frame(width:box.size.width*progress) } }
                 }
-                .clipShape(RoundedRectangle(cornerRadius:7,style:.continuous))
+                .clipShape(RoundedRectangle(cornerRadius:7))
                 .offset(x:shake)
                 .onChange(of:progress) { _,value in
                     studio.eraseProgress=value
@@ -394,8 +403,8 @@ private struct HoldToErase: View {
         .accessibilityLabel(L("Hold to erase")).accessibilityAction { studio.eraseHistory() }
     }
     private func label(_ text:String,fore:Color)->some View {
-        HStack(spacing:5) { DesignIcon("lucide:trash-2",size:12);Text(text) }
-            .font(LauncherStyle.font(11.5,.semibold)).foregroundStyle(fore)
+        HStack(spacing:5) { DesignIcon("lucide:trash-2",size:12);Text(text).designFont(11.5,.semibold) }
+            .foregroundStyle(fore)
             .padding(.leading,8).padding(.trailing,10).frame(minWidth:112).frame(height:24)
     }
 }
@@ -406,19 +415,19 @@ private struct UndoEraseButton: View {
         Button { withAnimation(.timingCurve(0.22,1,0.36,1,duration:0.42)) { studio.undoErase() } } label: {
             HStack(spacing:5) {
                 DesignIcon("lucide:undo-2",size:12)
-                Text(L("Erased · Undo"))
-                Text(L("{0}s",String(studio.undoLeft))).foregroundStyle(DiscordColors.ink(0.5)).monospacedDigit()
+                Text(L("Erased · Undo")).designFont(11.5,.semibold)
+                Text(L("{0}s",String(studio.undoLeft))).designFont(11.5,.semibold).foregroundStyle(DiscordColors.ink(0.5)).monospacedDigit()
             }
-            .font(LauncherStyle.font(11.5,.semibold)).foregroundStyle(DiscordColors.bright)
+            .foregroundStyle(DiscordColors.bright)
             .padding(.leading,8).padding(.trailing,10).frame(height:24)
-            .background(DiscordColors.veil(0.08),in:RoundedRectangle(cornerRadius:7,style:.continuous))
+            .background(DiscordColors.veil(0.08),in:RoundedRectangle(cornerRadius:7))
             .overlay(alignment:.bottomLeading) {
                 GeometryReader { box in
                     Rectangle().fill(Color(red:1,green:69/255,blue:58/255)).frame(width:box.size.width*Double(studio.undoLeft)/10,height:2)
                         .frame(maxHeight:.infinity,alignment:.bottom).animation(.linear(duration:1),value:studio.undoLeft)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius:7,style:.continuous))
+            .clipShape(RoundedRectangle(cornerRadius:7))
         }.buttonStyle(.plain)
     }
 }
@@ -428,8 +437,8 @@ private struct ExportButton: View {
     @State private var inside=false
     var body:some View {
         Button { studio.exportSessions() } label: {
-            HStack(spacing:6) { DesignIcon(studio.exported ? "lucide:check" : "lucide:download",size:14);Text(studio.exported ? L("Saved to Downloads") : L("Export…")) }
-                .font(LauncherStyle.font(13,.medium)).foregroundStyle(DiscordColors.ink(!enabled ? 0.3 : studio.exported ? 0.6 : 0.75))
+            HStack(spacing:6) { DesignIcon(studio.exported ? "lucide:check" : "lucide:download",size:14);Text(studio.exported ? L("Saved to Downloads") : L("Export…")).designFont(13,.medium) }
+                .foregroundStyle(DiscordColors.ink(!enabled ? 0.3 : studio.exported ? 0.6 : 0.75))
                 .padding(.leading,10).padding(.trailing,12).frame(height:30)
                 .background(inside && enabled ? DiscordColors.veil(0.06) : .clear,in:Capsule()).contentShape(Rectangle())
         }.buttonStyle(.plain).disabled(!enabled).onHover { inside=$0 }

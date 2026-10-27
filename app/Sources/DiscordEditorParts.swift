@@ -26,7 +26,7 @@ private struct RowHover: ViewModifier {
     let enabled:Bool
     @State private var inside=false
     func body(content:Content)->some View {
-        content.background { if inside && enabled { RoundedRectangle(cornerRadius:radius,style:.continuous).fill(DiscordColors.veil(veil)) } }
+        content.background { if inside && enabled { RoundedRectangle(cornerRadius:radius).fill(DiscordColors.veil(veil)) } }
             .onHover { inside=$0 }
             .animation(.easeOut(duration:0.2),value:inside)
     }
@@ -51,7 +51,7 @@ private struct ClickOrHold: ViewModifier {
                         .frame(width:sweep ? box.size.width : 0)
                 }
                 .opacity(sweep ? 1 : 0)
-                .clipShape(RoundedRectangle(cornerRadius:radius,style:.continuous)).allowsHitTesting(false)
+                .clipShape(RoundedRectangle(cornerRadius:radius)).allowsHitTesting(false)
             }
             .scaleEffect(pop && !reduceMotion ? 1.05 : 1)
             .contentShape(Rectangle())
@@ -96,11 +96,11 @@ struct PanelHeading: View {
     var body:some View {
         VStack(alignment:.leading,spacing:0) {
             HStack(spacing:8) {
-                Text(title).font(LauncherStyle.font(15,.bold)).foregroundStyle(DiscordColors.bright)
+                Text(title).designFont(15,.bold).foregroundStyle(DiscordColors.bright)
                 Spacer()
                 if turns { PaceButton(studio:studio) }
             }.frame(height:30)
-            Text(subtitle).font(LauncherStyle.font(11.5)).lineHeight(1.45,size:11.5).foregroundStyle(DiscordColors.ink(0.45))
+            Text(subtitle).designFont(11.5,line:11.5*1.45).foregroundStyle(DiscordColors.ink(0.45))
                 .frame(maxWidth:.infinity,minHeight:34,alignment:.topLeading).fixedSize(horizontal:false,vertical:true).padding(.top,-1)
         }
     }
@@ -113,12 +113,12 @@ struct PaceButton: View {
         Button { studio.nextPace() } label: {
             HStack(spacing:6) {
                 DesignIcon("lucide:repeat",size:12)
-                Text(DiscordStudio.paceName(studio.design.pace)).monospacedDigit().foregroundStyle(DiscordColors.bright).frame(minWidth:36,alignment:.leading)
+                Text(DiscordStudio.paceName(studio.design.pace)).designFont(11.5,.semibold).monospacedDigit().foregroundStyle(DiscordColors.bright).frame(minWidth:36,alignment:.leading)
                     .contentTransition(.numericText())
             }
-            .font(LauncherStyle.font(11.5,.semibold)).foregroundStyle(DiscordColors.ink(inside ? 1 : 0.7))
+            .foregroundStyle(DiscordColors.ink(inside ? 1 : 0.7))
             .padding(.leading,9).padding(.trailing,10).frame(height:26)
-            .background(DiscordColors.veil(inside ? 0.09 : 0.05),in:RoundedRectangle(cornerRadius:8,style:.continuous))
+            .background(DiscordColors.veil(inside ? 0.09 : 0.05),in:RoundedRectangle(cornerRadius:8))
         }
         .buttonStyle(.plain).onHover { inside=$0 }
         .accessibilityLabel(L("Change how long each one stays"))
@@ -134,7 +134,7 @@ struct PanelBox<Content:View>: View {
     @ViewBuilder var content:Content
     var body:some View {
         VStack(alignment:.leading,spacing:0) { content }.padding(padding).frame(maxWidth:.infinity,alignment:.leading)
-            .background(DiscordColors.veil(veil),in:UnevenRoundedRectangle(cornerRadii:corners,style:.continuous))
+            .background(DiscordColors.veil(veil),in:UnevenRoundedRectangle(cornerRadii:corners))
     }
 }
 extension View {
@@ -181,38 +181,37 @@ struct ListRow<Leading:View>: View {
                     Circle().trim(from:0,to:turnDone).stroke(DiscordColors.accent,style:StrokeStyle(lineWidth:1.6,lineCap:.round)).rotationEffect(.degrees(-90))
                         .animation(turnDone < 0.05 ? nil : .linear(duration:1),value:turnDone)
                 }
-                Text("\(number)").font(LauncherStyle.font(11,.bold)).monospacedDigit().foregroundStyle(live ? DiscordColors.accent : DiscordColors.ink(0.4))
+                Text("\(number)").designFont(11,.bold).monospacedDigit().foregroundStyle(live ? DiscordColors.accent : DiscordColors.ink(0.4))
             }.frame(width:18,height:18)
             leading.opacity(available ? 1 : 0.5)
             VStack(alignment:.leading,spacing:0) {
-                Text(verbatim:text).font(.discord(14,selected ? 600 : 500)).lineLimit(1)
+                Text(verbatim:text).discordFont(14,selected ? 600 : 500).lineLimit(1)
                     .foregroundStyle(available ? (selected || live ? DiscordColors.bright : DiscordColors.ink(0.8)) : DiscordColors.ink(0.38))
                 if let sub {
                     HStack(spacing:6) {
-                        Text(sub).font(LauncherStyle.font(11)).normalLines(size:11).foregroundStyle(DiscordColors.ink(0.45)).lineLimit(1)
+                        Text(sub).designFont(11).foregroundStyle(DiscordColors.ink(0.45)).lineLimit(1)
                         if let inMatch=matchesToo { MatchesTooChip(inMatch:inMatch) }
                     }
                 }
-            }
-            Spacer(minLength:4)
+            }.frame(maxWidth:.infinity,alignment:.leading)
             if let note {
-                HStack(spacing:4) { DesignIcon(note.icon,size:11);Text(note.text) }.font(LauncherStyle.font(11)).foregroundStyle(DiscordColors.ink(0.42)).fixedSize()
+                HStack(spacing:4) { DesignIcon(note.icon,size:11);Text(note.text).designFont(11) }.foregroundStyle(DiscordColors.ink(0.42)).fixedSize()
             }
             if removable { RemoveButton(action:remove) }
         }
         .padding(EdgeInsets(top:5,leading:8,bottom:5,trailing:4)).frame(minHeight:38)
         .contentShape(Rectangle())
+        .popIn(0.38)
     }
 }
 /// "⚔ Matches too": the other lines are for the menus only.
 struct MatchesTooChip: View {
     let inMatch:Bool
     var body:some View {
-        HStack(spacing:3) { DesignIcon("ph:sword-fill",size:8.5);Text(L("Matches too")) }
-            .font(LauncherStyle.font(9.5,.bold))
+        HStack(spacing:3) { DesignIcon("ph:sword-fill",size:8.5);Text(L("Matches too")).designFont(9.5,.bold) }
             .foregroundStyle(inMatch ? Color(red:150/255,green:195/255,blue:1) : DiscordColors.ink(0.55))
             .padding(.leading,4).padding(.trailing,5).frame(height:16)
-            .background(inMatch ? Color(red:110/255,green:170/255,blue:1).opacity(0.18) : DiscordColors.veil(0.06),in:RoundedRectangle(cornerRadius:5,style:.continuous))
+            .background(inMatch ? Color(red:110/255,green:170/255,blue:1).opacity(0.18) : DiscordColors.veil(0.06),in:RoundedRectangle(cornerRadius:5))
             .fixedSize()
             .designTip(L("Shows in matches too. The other lines are for the menus only."))
             .animation(.easeOut(duration:0.25),value:inMatch)
@@ -224,7 +223,7 @@ struct RemoveButton: View {
     var body:some View {
         Button(action:action) {
             DesignIcon("lucide:x",size:13).foregroundStyle(inside ? DiscordColors.bright : DiscordColors.ink(0.32))
-                .frame(width:24,height:24).background(inside ? DiscordColors.veil(0.08) : .clear,in:RoundedRectangle(cornerRadius:7,style:.continuous))
+                .frame(width:24,height:24).background(inside ? DiscordColors.veil(0.08) : .clear,in:RoundedRectangle(cornerRadius:7))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).onHover { inside=$0 }.accessibilityLabel(L("Remove"))
     }
@@ -234,7 +233,7 @@ struct RowIcon: View {
     let icon:String
     var body:some View {
         DesignIcon(icon,size:12.5).foregroundStyle(DiscordColors.ink(0.7))
-            .frame(width:24,height:24).background(DiscordColors.veil(0.05),in:RoundedRectangle(cornerRadius:7,style:.continuous))
+            .frame(width:24,height:24).background(DiscordColors.veil(0.05),in:RoundedRectangle(cornerRadius:7))
     }
 }
 
@@ -244,8 +243,9 @@ struct HoldHint: View {
     var body:some View {
         HStack(spacing:7) {
             DesignIcon("rc:hold",size:12).foregroundStyle(DiscordColors.accent)
-            Text(text).font(LauncherStyle.font(11)).normalLines(size:11).foregroundStyle(DiscordColors.ink(0.5))
+            Text(text).designFont(11).foregroundStyle(DiscordColors.ink(0.5))
         }
+        .fadeIn(0.4)
     }
 }
 
@@ -255,7 +255,7 @@ struct RuleHeading<Trailing:View>: View {
     @ViewBuilder var trailing:Trailing
     var body:some View {
         HStack(spacing:8) {
-            Text(text)
+            Text(text).designFont(11.5,.semibold)
             Rectangle().fill(DiscordColors.veil(0.07)).frame(height:1)
             trailing
         }
@@ -273,7 +273,7 @@ struct LinkButton: View {
     let action:()->Void
     @State private var inside=false
     var body:some View {
-        Button(action:action) { Text(title).font(LauncherStyle.font(size,.semibold)).foregroundStyle(inside ? DiscordColors.bright : DiscordColors.link) }
+        Button(action:action) { Text(title).designFont(size,.semibold).foregroundStyle(inside ? DiscordColors.bright : DiscordColors.link) }
             .buttonStyle(.plain).onHover { inside=$0 }
     }
 }
@@ -295,14 +295,14 @@ struct ChoiceRow<Trailing:View>: View {
         HStack(spacing:11) {
             markView.frame(width:18,height:18)
             VStack(alignment:.leading,spacing:2) {
-                Text(title).font(LauncherStyle.font(12.5,.semibold)).foregroundStyle(mark == .fixed ? DiscordColors.ink(0.6) : on ? DiscordColors.bright : DiscordColors.ink(0.78))
-                if let sub { Text(sub).font(LauncherStyle.font(11)).normalLines(size:11).foregroundStyle(DiscordColors.ink(0.45)).fixedSize(horizontal:false,vertical:true) }
+                Text(title).designFont(12.5,.semibold).foregroundStyle(mark == .fixed ? DiscordColors.ink(0.6) : on ? DiscordColors.bright : DiscordColors.ink(0.78))
+                if let sub { Text(sub).designFont(11).foregroundStyle(DiscordColors.ink(0.45)).fixedSize(horizontal:false,vertical:true) }
             }
             .frame(maxWidth:.infinity,alignment:.leading)
             trailing
         }
         .padding(.horizontal,10).padding(.vertical,6).frame(minHeight:44)
-        .background(on && mark != .fixed ? DiscordColors.veil(0.055) : .clear,in:RoundedRectangle(cornerRadius:11,style:.continuous))
+        .background(on && mark != .fixed ? DiscordColors.veil(0.055) : .clear,in:RoundedRectangle(cornerRadius:11))
         .rowHover(11,veil:0.06,enabled:mark != .fixed)
         .contentShape(Rectangle())
         .animation(.easeOut(duration:0.2),value:on)
@@ -319,7 +319,7 @@ struct ChoiceRow<Trailing:View>: View {
                 Circle().fill(on ? DiscordColors.accent : .clear)
                 if !on { Circle().strokeBorder(DiscordColors.veil(0.25),lineWidth:1.5) }
                 if on {
-                    if let number { Text("\(number)").font(LauncherStyle.font(10.5,.heavy)).monospacedDigit() } else { DesignIcon("lucide:check",size:11) }
+                    if let number { Text("\(number)").designFont(10.5,.heavy).monospacedDigit() } else { DesignIcon("lucide:check",size:11) }
                 }
                 if live {
                     Circle().stroke(DiscordColors.accent.opacity(0.22),lineWidth:1.6).frame(width:23,height:23)
@@ -341,15 +341,15 @@ struct WordPicker<Value:Hashable>: View {
             ForEach(choices,id:\.0) { value,label in
                 let on=value == chosen
                 Button { choose(value) } label: {
-                    Text(label).font(LauncherStyle.font(12,on ? .semibold : .medium)).lineLimit(1)
+                    Text(label).designFont(12,on ? .semibold : .medium).lineLimit(1)
                         .foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.58))
                         .padding(.horizontal,10).frame(height:26)
-                        .background(on ? DiscordColors.veil(0.14) : .clear,in:RoundedRectangle(cornerRadius:7,style:.continuous))
+                        .background(on ? DiscordColors.veil(0.14) : .clear,in:RoundedRectangle(cornerRadius:7))
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain)
             }
         }
-        .padding(2).background(DiscordColors.veil(0.05),in:RoundedRectangle(cornerRadius:9,style:.continuous))
+        .padding(2).background(DiscordColors.veil(0.05),in:RoundedRectangle(cornerRadius:9))
         .animation(.easeOut(duration:0.2),value:chosen)
     }
 }
@@ -363,7 +363,7 @@ struct DesignSwitch: View {
             HStack(spacing:7) {
                 Capsule().fill(on ? DiscordColors.accent : DiscordColors.veil(0.16)).frame(width:28,height:16)
                     .overlay(alignment:.leading) { Circle().fill(.white).frame(width:12,height:12).shadow(color:.black.opacity(0.3),radius:1,y:1).offset(x:on ? 14 : 2) }
-                Text(label).font(LauncherStyle.font(12,.semibold)).foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.6))
+                Text(label).designFont(12,.semibold).foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.6))
             }.frame(height:30).contentShape(Rectangle())
         }
         .buttonStyle(.plain).accessibilityAddTraits(on ? .isSelected : [])
@@ -385,31 +385,73 @@ struct RankTiles: View {
         }
     }
 }
-struct RankTileInfo { let choice:RankChoice;let label:String;let sub:String;let icon:String;let emblem:URL? }
+/// A rank tile: its emblem with the role's mark, its name and what it shows. Last played rolls through the
+/// player's roles and ranks (`roll`, the first again at its end), as it follows whichever was played last.
+struct RankTileInfo { let choice:RankChoice;let label:String;let sub:String;let icon:String;let emblem:URL?;var roll:[(icon:String,sub:String)]=[] }
 private struct RankTile: View {
     let tile:RankTileInfo
     let on:Bool
     @State private var inside=false
     var body:some View {
+        let rolls=tile.roll.count > 1
         VStack(spacing:3) {
             RemoteImage(url:tile.emblem,fill:false) { DesignIcon("ph:medal-fill",size:24).foregroundStyle(DiscordColors.ink(0.3)) }
                 .frame(width:32,height:32)
                 .overlay(alignment:.bottomTrailing) {
-                    DesignIcon(tile.icon,size:10).foregroundStyle(DiscordColors.ink(0.9))
-                        .frame(width:17,height:17).background(Color(red:52/255,green:53/255,blue:58/255),in:Circle())
-                        .overlay { Circle().strokeBorder(DiscordColors.stage,lineWidth:2).padding(-2) }
-                        .offset(x:6,y:4)
+                    Group {
+                        if rolls {
+                            Rolling(steps:tile.roll.count-1,height:17) {
+                                ForEach(Array(tile.roll.enumerated()),id:\.offset) { _,row in DesignIcon(row.icon,size:10).frame(width:17,height:17) }
+                            }.foregroundStyle(Color(red:1,green:190/255,blue:140/255))
+                        } else { DesignIcon(tile.icon,size:10).foregroundStyle(DiscordColors.ink(0.9)) }
+                    }
+                    .frame(width:17,height:17).background(Color(red:52/255,green:53/255,blue:58/255),in:Circle()).clipShape(Circle())
+                    .overlay { Circle().strokeBorder(DiscordColors.stage,lineWidth:2).padding(-2) }
+                    .offset(x:6,y:4)
                 }
                 .padding(.bottom,2)
-            Text(tile.label).font(LauncherStyle.font(12,.semibold)).foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.78)).lineLimit(1)
-            Text(tile.sub).font(LauncherStyle.font(10.5)).normalLines(size:10.5).foregroundStyle(DiscordColors.ink(0.5)).lineLimit(1)
+            Text(tile.label).designFont(12,.semibold).foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.78)).lineLimit(1)
+            if rolls {
+                Rolling(steps:tile.roll.count-1,height:14) {
+                    ForEach(Array(tile.roll.enumerated()),id:\.offset) { _,row in
+                        Text(row.sub).designFont(10.5,line:14).foregroundStyle(DiscordColors.ink(0.6)).lineLimit(1).frame(height:14)
+                    }
+                }
+            } else {
+                Text(tile.sub).designFont(10.5).foregroundStyle(DiscordColors.ink(0.5)).lineLimit(1)
+            }
         }
         .padding(.top,9).padding(.bottom,8).padding(.horizontal,2).frame(maxWidth:.infinity)
-        .background(on ? DiscordColors.accent.opacity(0.1) : DiscordColors.veil(0.035),in:RoundedRectangle(cornerRadius:11,style:.continuous))
-        .overlay { if on { RoundedRectangle(cornerRadius:11,style:.continuous).strokeBorder(DiscordColors.accent.opacity(0.7),lineWidth:1.5) } }
+        .background(on ? DiscordColors.accent.opacity(0.1) : DiscordColors.veil(0.035),in:RoundedRectangle(cornerRadius:11))
+        .overlay { if on { RoundedRectangle(cornerRadius:11).strokeBorder(DiscordColors.accent.opacity(0.7),lineWidth:1.5) } }
         .brightness(inside ? 0.06 : 0)
         .contentShape(Rectangle()).onHover { inside=$0 }
         .animation(.easeOut(duration:0.2),value:on)
+    }
+}
+
+/// Rows rolling up one at a time, as the design's do: each shows for two seconds (still for most of it, then easing
+/// up to the next), the last the same as the first, so the loop has no seam.
+struct Rolling<Rows:View>: View {
+    let steps:Int
+    let height:CGFloat
+    @ViewBuilder var rows:Rows
+    var body:some View {
+        VStack(spacing:0) { rows }
+            .keyframeAnimator(initialValue:0.0,repeating:true) { content,phase in content.offset(y:-Self.row(phase,steps)*height) } keyframes:{ _ in
+                LinearKeyframe(1.0,duration:2*Double(steps))
+            }
+            .frame(height:height,alignment:.top).clipped()
+    }
+    /// The row showing at a point of the loop (0 to 1), with how far it has eased on to the next: the design's
+    /// dcRoll3 (still until 27%, on the next by 33%, and so on, the last move ending at 100%), for any number of rows.
+    static func row(_ phase:Double,_ steps:Int)->CGFloat {
+        let unit=0.99/Double(steps),step=min(Double(steps-1),floor(phase/unit))
+        let start=(step+27.0/33)*unit,end=step == Double(steps-1) ? 1 : (step+1)*unit
+        if phase <= start { return CGFloat(step) }
+        if phase >= end { return CGFloat(step+1) }
+        let ease=UnitCurve.bezier(startControlPoint:UnitPoint(x:0.65,y:0),endControlPoint:UnitPoint(x:0.35,y:1))
+        return CGFloat(step+ease.value(at:(phase-start)/(end-start)))
     }
 }
 
@@ -424,7 +466,8 @@ extension DiscordStudio {
             return RankTileInfo(choice:.role(role),label:role.label,sub:rank?.name ?? L("No rank"),icon:role.icon,emblem:rank?.icon)
         }
         tiles.append(RankTileInfo(choice:.highest,label:L("Highest"),sub:L("Your best"),icon:"rc:crown-fill",emblem:inputs.rank(.highest)?.icon))
-        tiles.append(RankTileInfo(choice:.lastPlayed,label:L("Last played"),sub:L("Follows you"),icon:"ph:clock-fill",emblem:inputs.rank(.lastPlayed)?.icon))
+        tiles.append(RankTileInfo(choice:.lastPlayed,label:L("Last played"),sub:L("Follows you"),icon:"ph:clock-fill",emblem:inputs.rank(.lastPlayed)?.icon,
+                                  roll:ranks.count > 1 ? (ranks+[ranks[0]]).map { ($0.role.icon,$0.name) } : []))
         return tiles
     }
 }

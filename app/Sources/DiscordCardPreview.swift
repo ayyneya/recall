@@ -174,15 +174,15 @@ struct DesignTipLayer<Content:View>: View {
     private func bubble(_ tip:DesignTips.Tip)->some View {
         HStack(alignment:.top,spacing:7) {
             if tip.discord { DesignIcon("ic:baseline-discord",size:13).foregroundStyle(Color(red:150/255,green:160/255,blue:1)).padding(.top,2) }
-            Text(tip.text).font(tip.discord ? .discord(13,500) : LauncherStyle.font(11.5,.medium))
-                .lineHeight(1.4,tip.discord ? DiscordFont.nsFont(13,500) : NSFont.systemFont(ofSize:11.5,weight:.medium))
+            Text(tip.text).font(tip.discord ? .discord(13,500) : Font(SystemFont.nsFont(11.5,500)))
+                .cssLines(tip.discord ? DiscordFont.nsFont(13,500) : NSFont.systemFont(ofSize:11.5),tip.discord ? 13*1.4 : 11.5*1.4)
                 .fixedSize(horizontal:false,vertical:true)
         }
         .foregroundStyle(DiscordColors.ink(0.92))
         .padding(.horizontal,tip.discord ? 10 : 9).padding(.vertical,tip.discord ? 7 : 6)
         .frame(maxWidth:260,alignment:.leading).fixedSize(horizontal:true,vertical:false)
-        .background(Color(red:17/255,green:18/255,blue:20/255).opacity(0.95),in:RoundedRectangle(cornerRadius:8,style:.continuous))
-        .overlay { RoundedRectangle(cornerRadius:8,style:.continuous).strokeBorder(.white.opacity(0.07),lineWidth:1) }
+        .background(Color(red:17/255,green:18/255,blue:20/255).opacity(0.95),in:RoundedRectangle(cornerRadius:8))
+        .overlay { RoundedRectangle(cornerRadius:8).strokeBorder(.white.opacity(0.07),lineWidth:1) }
         // One shadow for the whole bubble, not one for each line of text in it.
         .compositingGroup().shadow(color:.black.opacity(0.5),radius:14,y:10)
         .environment(\.colorScheme,.dark)
@@ -213,6 +213,24 @@ struct DiscordCardView: View {
     var pins:CardPins?
     /// Line 2's place in its turn while lines take turns (Settings › Discord), as a small ring after it.
     var lineTwoTurn:(done:Double,label:String)?
+    /// The level on Discord's tab and the clock's turn, where the card shows them: what a change brings arrives as the
+    /// design's parts do. A level's spring in one after another (the badge only the first time); a turn's Line 2
+    /// rises; anything else brightens.
+    var level:DiscordPresenceLevel?=nil
+    var turn:Int?=nil
+    @State private var shownLevel:DiscordPresenceLevel?
+    @State private var shownTurn:Int?
+    @State private var shownDetails:String?
+    @State private var shownBadge:String?
+    /// Nothing arrives as the card itself first shows.
+    @State private var appeared=false
+    private static var badgeSprung=false
+    private enum Arrival { case level,clock,other }
+    private var arrival:Arrival {
+        if let level,let shownLevel,level != shownLevel { return .level }
+        if let turn,let shownTurn,turn != shownTurn { return .clock }
+        return .other
+    }
     private var assets:[String:String] { activity["assets"] as? [String:String] ?? [:] }
     private var details:String? { activity["details"] as? String }
     private var state:String? {
@@ -236,18 +254,52 @@ struct DiscordCardView: View {
                 if let selected,let anchor=bounds[selected] { PartHighlight(slot:selected,anchor:anchor).transition(.afterMove) }
             }
             .environment(\.colorScheme,.dark)
+            .onAppear { shownLevel=level;shownTurn=turn;shownDetails=details;shownBadge=assets["small_image"];appeared=true }
+            .onChange(of:level) { _,level in
+                shownLevel=level
+                if let level,level != .normal { Self.badgeSprung=true }
+            }
+            .onChange(of:turn) { _,turn in shownTurn=turn }
+            .onChange(of:details) { _,details in shownDetails=details }
+            .onChange(of:assets["small_image"]) { _,badge in shownBadge=badge }
+    }
+    /// In Customize, what the clock changes glows for a moment.
+    private var glows:Bool { arrival == .clock && selected != nil }
+    /// How a line arrives: brought by a level, sliding in from the left with a spring (Line 2 a moment after Line 1, when
+    /// both are new); by the clock, Line 2 rising; otherwise brightening.
+    private func lineArrival(second:Bool)->(start:ArrivalStart,animation:Animation)? {
+        guard appeared else { return nil }
+        switch arrival {
+        case .level:
+            let after=second && details != nil && details != shownDetails
+            return (ArrivalStart(x:-12,opacity:0.001),.design(.outBack(1.8),0.62).delay(after ? 0.07 : 0))
+        case .clock where second: return (ArrivalStart(y:4,opacity:0),.design(.outCubic,0.3))
+        default: return (ArrivalStart(opacity:0.4),.design(.outQuad,0.24))
+        }
+    }
+    /// The badge as a level changes it, as the design's: the first level up from Basic springs it from small (the design's
+    /// Basic card has no badge of its own, though it shows the Mac's); another level's other badge comes in from faint.
+    private var badgeArrival:(start:ArrivalStart,animation:Animation)? {
+        guard appeared,arrival == .level,let level,let shownLevel else { return nil }
+        if shownLevel == .normal { return Self.badgeSprung ? nil : (ArrivalStart(scale:0.3),.design(.outElastic(1,0.5),0.85)) }
+        return level != .normal && assets["small_image"] != shownBadge ? (ArrivalStart(opacity:0.35),.design(.outQuad,0.26)) : nil
+    }
+    /// The buttons, brought by a level, rise into place a moment after the lines; otherwise they fade in.
+    private var buttonsArrival:(start:ArrivalStart,animation:Animation)? {
+        guard appeared else { return nil }
+        return arrival == .level ? (ArrivalStart(y:12,opacity:0.001),.design(.outBack(1.6),0.64).delay(0.15)) : (ArrivalStart(opacity:0),.cssEase(0.35))
     }
     private var desktopCard:some View {
         VStack(alignment:.leading,spacing:8) {
             HStack {
-                Text(L("Playing")).font(.discord(13,700)).foregroundStyle(DiscordColors.title)
+                Text(L("Playing")).discordFont(13,700).foregroundStyle(DiscordColors.title)
                 Spacer()
                 DesignIcon("mdi:dots-horizontal",size:18).foregroundStyle(DiscordColors.text)
             }.frame(height:18)
             HStack(alignment:.center,spacing:12) {
                 pictures(size:64,radius:8,badge:28,inner:22,badgeBack:DiscordColors.card)
                 VStack(alignment:.leading,spacing:1) {
-                    Text(verbatim:"Overwatch").font(.discord(16,600)).foregroundStyle(DiscordColors.title).frame(height:20)
+                    Text(verbatim:"Overwatch").discordFont(16,600,line:20).foregroundStyle(DiscordColors.title)
                         .designTip(phone ? nil : L("Always shown. Discord takes the name from the game."))
                     lines(height:18,pinned:true)
                 }.font(.discord(14)).foregroundStyle(DiscordColors.text).frame(maxWidth:.infinity,alignment:.leading)
@@ -256,68 +308,73 @@ struct DiscordCardView: View {
                 part(.buttons) {
                     HStack(spacing:8) {
                         ForEach(buttons,id:\.self) { label in
-                            Text(verbatim:label).font(.discord(14,500)).foregroundStyle(.white).lineLimit(1)
-                                .frame(maxWidth:.infinity).frame(height:32).background(DiscordColors.button,in:RoundedRectangle(cornerRadius:8,style:.continuous))
+                            Text(verbatim:label).discordFont(14,500).foregroundStyle(.white).lineLimit(1)
+                                .frame(maxWidth:.infinity).frame(height:32).background(DiscordColors.button,in:RoundedRectangle(cornerRadius:8))
                         }
                     }
                 }
+                .modifier(PartArrival(trigger:0,buttonsArrival)).transition(.identity)
             }
         }
         .padding(EdgeInsets(top:10,leading:12,bottom:12,trailing:12))
-        .background(DiscordColors.card,in:RoundedRectangle(cornerRadius:8,style:.continuous))
+        .background(DiscordColors.card,in:RoundedRectangle(cornerRadius:8))
     }
     private var phoneCard:some View {
         VStack(alignment:.leading,spacing:12) {
-            Text(L("Playing")).font(.discord(14,700)).foregroundStyle(DiscordColors.title)
+            Text(L("Playing")).discordFont(14,700).foregroundStyle(DiscordColors.title)
             HStack(alignment:.center,spacing:14) {
                 pictures(size:76,radius:10,badge:30,inner:24,badgeBack:DiscordColors.phoneCard)
                 VStack(alignment:.leading,spacing:0) {
-                    Text(verbatim:"Overwatch").font(.discord(17,600)).foregroundStyle(DiscordColors.title).frame(height:22)
+                    Text(verbatim:"Overwatch").discordFont(17,600,line:22).foregroundStyle(DiscordColors.title)
                     lines(height:20,pinned:false)
                 }.font(.discord(15)).foregroundStyle(DiscordColors.text).frame(maxWidth:.infinity,alignment:.leading)
             }
         }
         .padding(14)
-        .background(DiscordColors.phoneCard,in:RoundedRectangle(cornerRadius:14,style:.continuous))
+        .background(DiscordColors.phoneCard,in:RoundedRectangle(cornerRadius:14))
     }
-    /// Line 1, Line 2 and the timer.
+    /// Line 1, Line 2 and the timer, in the font the column around them sets.
+    private var lineFont:NSFont { DiscordFont.nsFont(phone ? 15 : 14) }
     @ViewBuilder private func lines(height:CGFloat,pinned:Bool)->some View {
         if let details {
             HStack(spacing:7) {
-                part(.lineOne,text:true) { Text(verbatim:details).lineLimit(1) }
+                part(.lineOne,text:true) { Text(verbatim:details).cssLines(lineFont,height).lineLimit(1) }
                 if pinned,let count=pins?.lineOne,count > 1 { Pin(count:count) }
-            }.frame(height:height)
+            }
+            .modifier(TurnGlow(trigger:details,on:glows)).modifier(PartArrival(trigger:details,lineArrival(second:false)))
+            .frame(height:height).transition(.identity)
         }
         if let state {
             HStack(spacing:7) {
-                part(.lineTwo,text:true) { Text(verbatim:state).lineLimit(1) }
+                part(.lineTwo,text:true) { Text(verbatim:state).cssLines(lineFont,height).lineLimit(1) }
                 if pinned,let count=pins?.lineTwo,count > 1 { Pin(count:count) }
                 if pinned,let turn=lineTwoTurn { TurnRing(done:turn.done).accessibilityLabel(turn.label) }
-            }.frame(height:height)
+            }
+            .modifier(TurnGlow(trigger:state,on:glows)).modifier(PartArrival(trigger:state,lineArrival(second:true)))
+            .frame(height:height).transition(.identity)
         }
         part(.timer,text:true) {
-            HStack(spacing:5) { DesignIcon("mdi:controller",size:16);Text(verbatim:elapsed).monospacedDigit() }.foregroundStyle(DiscordColors.timer)
+            HStack(spacing:5) { DesignIcon("mdi:controller",size:16);Text(verbatim:elapsed).cssLines(lineFont,height).monospacedDigit() }.foregroundStyle(DiscordColors.timer)
         }.frame(height:height)
     }
     /// The large picture with its badge.
     private func pictures(size:CGFloat,radius:CGFloat,badge:CGFloat,inner:CGFloat,badgeBack:Color)->some View {
         let large=assets["large_image"].flatMap(URL.init(string:)),small=assets["small_image"].flatMap(URL.init(string:))
         return part(.picture,text:false) {
-            Group {
-                if let large { RemoteImage(url:large) { DiscordColors.tile } } else { GameIcon() }
-            }
-            .frame(width:size,height:size).background(large == nil ? .clear : DiscordColors.tile)
-            .clipShape(RoundedRectangle(cornerRadius:radius,style:.continuous))
-            .designTip(phone ? nil : assets["large_text"],discord:true,below:true)
+            LargePicture(url:large,size:size,radius:radius)
+                .modifier(TurnGlow(trigger:large,on:glows,corner:radius))
+                .designTip(phone ? nil : assets["large_text"],discord:true,below:true)
         }
         .overlay(alignment:.topLeading) { if let count=pins?.picture,count > 1 { Pin(count:count).offset(x:-7,y:-7) } }
         .overlay(alignment:.bottomTrailing) {
             if let small {
                 part(.badge,text:false) {
-                    BadgeImage(url:small,size:inner,back:phone ? DiscordColors.stage : DiscordColors.tile)
+                    BadgeLayers(url:small,size:inner,back:phone ? DiscordColors.stage : DiscordColors.tile)
                         .frame(width:badge,height:badge).background(badgeBack,in:Circle())
+                        .modifier(TurnGlow(trigger:small,on:glows,corner:badge/2))
                         .designTip(phone ? nil : assets["small_text"],discord:true,below:true)
                 }
+                .modifier(PartArrival(trigger:level,badgeArrival,onAppear:false)).transition(.identity)
                 .offset(x:6,y:6)
                 .overlay(alignment:.topLeading) { if let count=pins?.badge,count > 1 { Pin(count:count).offset(x:-(size-24-badge+6),y:-(size-30-badge+6)) } }
             }
@@ -333,15 +390,90 @@ struct DiscordCardView: View {
     }
 }
 
-/// The badge: the rank's emblem, whole, or Recall's icon, filling the circle.
+/// What the clock changed in Customize glows for a moment (1.4 s), as the design's does: a line with a warm halo; a picture
+/// (`corner`, its corner radius) with a ring and a glow round it. A change of `trigger` while `on` starts it.
+private struct TurnGlow: ViewModifier {
+    let trigger:AnyHashable?
+    let on:Bool
+    var corner:CGFloat?=nil
+    func body(content:Content)->some View {
+        content.keyframeAnimator(initialValue:0.0,trigger:trigger) { view,glow in
+            Group {
+                if glow <= 0 { view }
+                else if let corner {
+                    view.overlay { RoundedRectangle(cornerRadius:corner+2).strokeBorder(Color(red:1,green:160/255,blue:110/255).opacity(0.85*glow),lineWidth:2).padding(-2) }
+                        .shadow(color:Color(red:1,green:140/255,blue:90/255).opacity(0.6*glow),radius:11)
+                } else {
+                    view.shadow(color:Color(red:1,green:170/255,blue:110/255).opacity(0.95*glow),radius:6)
+                        .shadow(color:Color(red:1,green:210/255,blue:170/255).opacity(0.7*glow),radius:1)
+                }
+            }
+        } keyframes:{ _ in
+            MoveKeyframe(on ? 1.0 : 0)
+            LinearKeyframe(0.0,duration:1.4,timingCurve:.bezier(startControlPoint:UnitPoint(x:0.22,y:1),endControlPoint:UnitPoint(x:0.36,y:1)))
+        }
+    }
+}
+/// The large picture: another fades in over 0.3 s while the one before fades out over it, as the design's does (Overwatch's
+/// own when there's none).
+private struct LargePicture: View {
+    let url:URL?
+    let size:CGFloat
+    let radius:CGFloat
+    @State private var before:URL??
+    var body:some View {
+        KeyframeAnimator(initialValue:0.0,trigger:url) { fading in
+            ZStack {
+                tile(url).opacity(1-fading)
+                if fading > 0,let before { tile(before).opacity(fading) }
+            }
+        } keyframes:{ _ in
+            MoveKeyframe(1.0)
+            LinearKeyframe(0.0,duration:0.3,timingCurve:.bezier(startControlPoint:UnitPoint(x:0.25,y:0.1),endControlPoint:UnitPoint(x:0.25,y:1)))
+        }
+        .onChange(of:url) { old,_ in before=old }
+    }
+    private func tile(_ url:URL?)->some View {
+        Group {
+            if let url { RemoteImage(url:url) { DiscordColors.tile } } else { GameIcon() }
+        }
+        .frame(width:size,height:size).background(url == nil ? .clear : DiscordColors.tile)
+        .clipShape(RoundedRectangle(cornerRadius:radius))
+    }
+}
+
+/// The badge as the design stacks it, the rank's emblem under the Mac badge under Recall's icon: another kind of badge
+/// cross-fades over 0.3 s, while another rank's emblem just takes the place of the one before.
+private struct BadgeLayers: View {
+    let url:URL
+    let size:CGFloat
+    let back:Color
+    @State private var rank:URL?
+    /// The Mac badge and Recall's icon, once shown (Recall's loads from the repository).
+    @State private var icons:Set<URL>=[]
+    private static func isRank(_ url:URL)->Bool { url != Brand.macBadge && url != Brand.discordBadge }
+    var body:some View {
+        ZStack {
+            if let rank=Self.isRank(url) ? url : rank { BadgeImage(url:rank,size:size,back:back).opacity(Self.isRank(url) ? 1 : 0) }
+            ForEach([Brand.macBadge,Brand.discordBadge],id:\.self) { icon in
+                if icon == url || icons.contains(icon) { BadgeImage(url:icon,size:size,back:back).opacity(icon == url ? 1 : 0) }
+            }
+        }
+        .animation(.cssEase(0.3),value:Self.isRank(url) ? nil : url)
+        .onChange(of:url,initial:true) { _,url in if Self.isRank(url) { rank=url } else { icons.insert(url) } }
+    }
+}
+/// The badge: the rank's emblem, whole (a little inside the circle where the design has it so: `inset`), or Recall's
+/// icon, filling the circle.
 struct BadgeImage: View {
     let url:URL
     let size:CGFloat
     var back:Color=DiscordColors.tile
+    var inset:CGFloat=1
     var body:some View {
         let icon=url == Brand.discordBadge
         RemoteImage(url:url,fill:icon) { back }
-            .scaleEffect(icon ? 1.25 : 1)
+            .scaleEffect(icon ? 1.25 : url == Brand.macBadge ? 1 : inset)
             .frame(width:size,height:size).background(back).clipShape(Circle())
     }
 }
@@ -349,8 +481,8 @@ struct BadgeImage: View {
 struct Pin: View {
     let count:Int
     var body:some View {
-        HStack(spacing:2) { DesignIcon("lucide:repeat",size:9);Text("\(count)").monospacedDigit() }
-            .font(LauncherStyle.font(10,.heavy)).foregroundStyle(Color(red:28/255,green:28/255,blue:32/255))
+        HStack(spacing:2) { DesignIcon("lucide:repeat",size:9);Text("\(count)").designFont(10,.heavy).monospacedDigit() }
+            .foregroundStyle(Color(red:28/255,green:28/255,blue:32/255))
             .padding(.leading,4).padding(.trailing,5).frame(height:16)
             .background(DiscordColors.accent,in:Capsule())
             .overlay { Capsule().strokeBorder(DiscordColors.card,lineWidth:2).padding(-2) }
@@ -384,9 +516,9 @@ private struct PartHighlight: View {
         GeometryReader { proxy in
             let bounds=proxy[anchor],text=[.lineOne,.lineTwo,.timer].contains(slot)
             let padX:CGFloat=text ? 6 : 4,padY:CGFloat=text ? 1 : 4,radius:CGFloat=slot == .badge ? (bounds.height+padY*2)/2 : text ? 5 : 10
-            RoundedRectangle(cornerRadius:radius,style:.continuous)
+            RoundedRectangle(cornerRadius:radius)
                 .fill(DiscordColors.pick.opacity(quiet ? 0 : 0.13))
-                .overlay { RoundedRectangle(cornerRadius:radius,style:.continuous).strokeBorder(DiscordColors.pick.opacity(quiet ? 0.32 : 0.8),lineWidth:1.5) }
+                .overlay { RoundedRectangle(cornerRadius:radius).strokeBorder(DiscordColors.pick.opacity(quiet ? 0.32 : 0.8),lineWidth:1.5) }
                 .frame(width:bounds.width+padX*2,height:bounds.height+padY*2)
                 .offset(x:bounds.minX-padX,y:bounds.minY-padY)
                 .transaction { if !placed { $0.animation=nil } }
@@ -411,13 +543,17 @@ struct DiscordShell<Card:View>: View {
     @ViewBuilder var card:Card
     var body:some View {
         VStack(alignment:.leading,spacing:0) {
-            // The design's banner: a 115° sweep from indigo through violet to pink, lit cyan near the top right.
+            // The design's banner: a 115° sweep from indigo through violet to pink, lit cyan near the top right (an
+            // ellipse 120% by 140% of the banner round 85% across the top, fading out by 55% of the way).
             ZStack {
-                LinearGradient(stops:[.init(color:Color(red:72/255,green:58/255,blue:154/255),location:0),.init(color:Color(red:144/255,green:58/255,blue:178/255),location:0.55),
-                                      .init(color:Color(red:202/255,green:68/255,blue:154/255),location:1)],startPoint:UnitPoint(x:0.06,y:-0.81),endPoint:UnitPoint(x:0.94,y:1.81))
-                EllipticalGradient(colors:[Color(red:38/255,green:183/255,blue:211/255).opacity(0.55),.clear],center:UnitPoint(x:0.85,y:0),startRadiusFraction:0,endRadiusFraction:1.4)
+                LinearGradient(stops:DiscordColors.banner,startPoint:UnitPoint(x:0.06,y:-0.81),endPoint:UnitPoint(x:0.94,y:1.81))
+                GeometryReader { box in
+                    let cyan=Color(red:38/255,green:183/255,blue:211/255)
+                    EllipticalGradient(colors:[cyan.opacity(0.55),cyan.opacity(0)],center:.center,startRadiusFraction:0,endRadiusFraction:0.275)
+                        .frame(width:2.4*box.size.width,height:2.8*box.size.height).position(x:0.85*box.size.width,y:0)
+                }
             }
-            .frame(height:profile ? 58 : 0).clipShape(UnevenRoundedRectangle(topLeadingRadius:10,topTrailingRadius:10,style:.continuous))
+            .frame(height:profile ? 58 : 0).clipShape(UnevenRoundedRectangle(topLeadingRadius:10,topTrailingRadius:10))
             ZStack(alignment:.topLeading) {
                 Text(L("You")).font(.discord(18,700)).foregroundStyle(DiscordColors.title).shadow(color:.black.opacity(0.55),radius:1.5,y:1)
                     .frame(height:22).padding(.leading,98).padding(.top,2)

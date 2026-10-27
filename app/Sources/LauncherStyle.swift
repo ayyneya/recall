@@ -28,17 +28,33 @@ enum LauncherStyle {
     }
 }
 struct LauncherBackground: View {
+    /// Settings, dark: the Discord design's light instead (SettingsGlow).
+    var settings=false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var body:some View {
         LauncherStyle.ground(scheme)
             .overlay(alignment:.top) {
                 if !reduceTransparency {
-                    RadialGradient(colors:[LauncherStyle.accent.opacity(scheme == .dark ? 0.10 : 0.13),.clear],center:.center,startRadius:10,endRadius:240)
-                        .frame(width:520,height:420).offset(y:-90)
+                    if settings && scheme == .dark { SettingsGlow() } else {
+                        RadialGradient(colors:[LauncherStyle.accent.opacity(scheme == .dark ? 0.10 : 0.13),.clear],center:.center,startRadius:10,endRadius:240)
+                            .frame(width:520,height:420).offset(y:-90)
+                    }
                 }
             }
             .ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
+    }
+}
+/// The light at the top of Settings, as the Discord design has it: in a box 520 by 420 points, half above the sheet, orange
+/// round the title fading out 213 points from it, and a touch of pink to its right, out by 239.
+private struct SettingsGlow: View {
+    var body:some View {
+        let orange=Color(red:1,green:128/255,blue:64/255),pink=Color(red:1,green:92/255,blue:138/255)
+        ZStack {
+            RadialGradient(colors:[orange.opacity(0.13),orange.opacity(0)],center:UnitPoint(x:0.42,y:0.5),startRadius:0,endRadius:213.2)
+            RadialGradient(colors:[pink.opacity(0.08),pink.opacity(0)],center:UnitPoint(x:0.62,y:0.56),startRadius:0,endRadius:239.4)
+        }
+        .frame(width:520,height:420).clipped().offset(y:-210)
     }
 }
 struct AppArtwork: View {
@@ -63,10 +79,11 @@ struct LauncherHeading: View {
     let title:String
     let subtitle:String
     var compact=false
+    var color:Color = .primary
     var body:some View {
         VStack(spacing:12) {
             Text(title).font(LauncherStyle.font(compact ? 28 : 36,.bold))
-                .tracking(-0.8).foregroundStyle(.primary).accessibilityAddTraits(.isHeader)
+                .tracking(-0.8).foregroundStyle(color).accessibilityAddTraits(.isHeader)
             if !subtitle.isEmpty {
                 Text(subtitle).font(LauncherStyle.font(16)).lineSpacing(3).foregroundStyle(.secondary)
             }
@@ -186,20 +203,21 @@ struct LauncherTabs<Tab:Hashable & Identifiable>: View {
         HStack(spacing:spacing) {
             ForEach(tabs) { tab in
                 let selected=showsSelection && selection == tab
-                let shape=RoundedRectangle(cornerRadius:14,style:.continuous)
+                let shape=RoundedRectangle(cornerRadius:14)
                 Button { selection=tab } label: {
+                    // The design's tab: the others dimmed, the chosen one on a raised tile.
                     VStack(spacing:5) {
                         Group {
                             if symbol(tab).contains(":") { DesignIcon(symbol(tab),size:18) }
                             else { Image(systemName:symbol(tab)).font(.system(size:17,weight:.medium)) }
-                        }.frame(height:21)
+                        }.frame(height:18)
                             .foregroundStyle(selected ? AnyShapeStyle(tint(tab) ?? LauncherStyle.accent) : AnyShapeStyle(.secondary))
-                        Text(title(tab)).font(LauncherStyle.font(12,selected ? .semibold : .medium))
-                            .foregroundStyle(selected ? .primary : .secondary)
-                    }.frame(width:width,height:54)
+                        Text(title(tab)).designFont(12,selected ? .semibold : .medium)
+                            .foregroundStyle(selected ? AnyShapeStyle(DiscordColors.bright) : AnyShapeStyle(.secondary))
+                    }.frame(width:width,height:54).opacity(selected ? 1 : 0.55)
                         .background {
                             if selected {
-                                shape.fill(LauncherStyle.surface(scheme)).overlay { shape.strokeBorder(.primary.opacity(0.05),lineWidth:1) }
+                                shape.fill(LauncherStyle.surface(scheme)).overlay { shape.strokeBorder(.primary.opacity(0.06),lineWidth:1) }
                             }
                         }.contentShape(shape)
                 }.buttonStyle(.plain).accessibilityLabel(title(tab)).accessibilityAddTraits(selected ? .isSelected : [])

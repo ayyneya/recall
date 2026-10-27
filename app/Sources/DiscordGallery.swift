@@ -9,10 +9,12 @@ import AppKit
 struct DiscordGallery: View {
     @Bindable var studio:DiscordStudio
     var body:some View {
+        // Inside the stage's one-point border, as the design's are.
         VStack(spacing:0) {
-            GalleryCards(studio:studio).frame(height:548-34-268)
+            GalleryCards(studio:studio).frame(height:548-2-34-268)
             GalleryCaption(studio:studio).frame(height:268)
         }
+        .padding(.vertical,1)
         .focusable().focusEffectDisabled()
         .onKeyPress(.leftArrow) { studio.galleryStep(-1);return .handled }
         .onKeyPress(.rightArrow) { studio.galleryStep(1);return .handled }
@@ -29,28 +31,30 @@ private struct GalleryCards: View {
             ZStack {
                 if place > 0 { neighbour(items[place-1],now:context.date,leading:true) }
                 if place < items.count-1 { neighbour(items[place+1],now:context.date,leading:false) }
-                if let activity=studio.activity(at:context.date) {
-                    DiscordShell(profile:false) {
-                        DiscordCardView(activity:activity,now:context.date,pins:studio.galleryPins)
-                            .overlay(alignment:.top) {
-                                HStack(spacing:5) {
-                                    TurnDots(studio:studio,now:context.date)
-                                    if studio.loopLength(at:context.date) > 1 {
-                                        HStack(spacing:3) { DesignIcon("rc:ff",size:9);Text(L("Sped up")) }
-                                            .font(LauncherStyle.font(10,.bold)).foregroundStyle(Color(red:1,green:190/255,blue:140/255).opacity(0.9)).fixedSize()
-                                    }
-                                }.offset(y:10)
-                            }
-                    }
-                    .scaleEffect(0.86)
-                    .id(studio.galleryItem?.design.id)
-                    .transition(.asymmetric(insertion:.opacity.combined(with:.scale(scale:0.94)),removal:.opacity))
+                let activity=studio.activity(at:context.date)
+                DiscordShell(profile:false) {
+                    DiscordCardView(activity:activity,now:context.date,pins:studio.galleryPins,turn:studio.turn(at:context.date))
+                        .overlay(alignment:.top) {
+                            HStack(spacing:5) {
+                                TurnDots(studio:studio,now:context.date)
+                                if studio.loopLength(at:context.date) > 1 {
+                                    HStack(spacing:3) { DesignIcon("rc:ff",size:9);Text(L("Sped up")).designFont(10,.bold) }
+                                        .foregroundStyle(Color(red:1,green:190/255,blue:140/255).opacity(0.9)).fixedSize()
+                                }
+                            }.offset(y:10)
+                        }
                 }
+                .scaleEffect(0.86)
+                .id(studio.galleryItem?.design.id)
+                .transition(.asymmetric(insertion:.opacity.combined(with:.scale(scale:0.94)),removal:.opacity))
                 HStack {
                     arrow("lucide:chevron-left",name:L("Previous card"),enabled:place > 0) { studio.galleryStep(-1) }
                     Spacer()
                     arrow("lucide:chevron-right",name:L("Next card"),enabled:place < items.count-1) { studio.galleryStep(1) }
-                }.padding(.horizontal,8)
+                }
+                // Eight points inside the stage's border, and a point under the middle (the design's sum for their
+                // place counts the border in the stage's height).
+                .padding(.horizontal,9).offset(y:1)
             }
             .frame(maxWidth:.infinity,maxHeight:.infinity)
             .animation(.timingCurve(0.22,1,0.36,1,duration:0.45),value:place)
@@ -62,7 +66,7 @@ private struct GalleryCards: View {
         return Button { studio.galleryStep(leading ? -1 : 1) } label: {
             VStack(spacing:0) { DiscordCardView(activity:activity,now:now) }
                 .padding(10).frame(width:300)
-                .background(DiscordColors.popout,in:RoundedRectangle(cornerRadius:10,style:.continuous))
+                .background(DiscordColors.popout,in:RoundedRectangle(cornerRadius:10))
                 .compositingGroup().shadow(color:.black.opacity(0.45),radius:16,y:12)
         }
         .buttonStyle(NeighbourStyle())
@@ -115,8 +119,11 @@ private struct GalleryCaption: View {
                     }
                     if item.readyMade { tag(L("System"),icon:nil,back:.white.opacity(0.08),fore:DiscordColors.ink(0.62)) }
                 }.frame(height:30)
-                Text(studio.galleryDescription(item)).font(LauncherStyle.font(12)).lineHeight(1.45,size:12).foregroundStyle(DiscordColors.ink(0.62))
-                    .multilineTextAlignment(.center).frame(maxWidth:390,minHeight:34,alignment:.top).fixedSize(horizontal:false,vertical:true)
+                // The design balances its lines (text-wrap: balance).
+                let description=studio.galleryDescription(item)
+                Text(description).designFont(12,line:12*1.45).foregroundStyle(DiscordColors.ink(0.62))
+                    .multilineTextAlignment(.center).frame(width:DesignText.balanced(description,SystemFont.nsFont(12),within:390)).frame(minHeight:34,alignment:.top)
+                    .fixedSize(horizontal:false,vertical:true)
                 HStack(spacing:6) {
                     let inUse=item.design.id == studio.shelf.inUse.id
                     MainButton(title:inUse ? L("Edit this card") : L("Use this card"),icon:inUse ? "lucide:pencil" : "lucide:check") {
@@ -128,9 +135,9 @@ private struct GalleryCaption: View {
                     }
                     ActButton(icon:"lucide:trash-2",tip:studio.canDelete(item) ? L("Delete") : L("Your only card can’t be deleted"),enabled:studio.canDelete(item)) { studio.delete(item) }
                 }
-                if studio.sharing { SharePanel(studio:studio,code:studio.code(item)).transition(.scale(scale:0.96).combined(with:.opacity)) }
+                if studio.sharing { SharePanel(studio:studio,code:studio.code(item)).popIn(0.3).transition(.identity) }
             }
-            if studio.importing { importPanel.transition(.scale(scale:0.96).combined(with:.opacity)) }
+            if studio.importing { importPanel.popIn(0.3).transition(.identity) }
             Spacer(minLength:0)
             HStack(spacing:0) {
                 let mine=studio.shelf.mine.count
@@ -144,27 +151,27 @@ private struct GalleryCaption: View {
                 }
             }.frame(height:14).animation(.timingCurve(0.22,1,0.36,1,duration:0.35),value:place)
             HStack(spacing:12) {
-                Text(L("{0} of {1}",String(place+1),String(items.count))).monospacedDigit()
+                Text(L("{0} of {1}",String(place+1),String(items.count))).designFont(11).monospacedDigit()
                 if studio.hiddenCount > 0 {
                     smallButton(studio.hiddenCount == 1 ? L("Bring back 1 system card") : L("Bring back {0} system cards",String(studio.hiddenCount)),icon:"lucide:rotate-ccw",color:DiscordColors.ink(0.6)) { studio.bringBack() }
                 }
                 smallButton(studio.importing ? L("Cancel") : L("Add from a code"),icon:"lucide:clipboard-paste",color:DiscordColors.link) {
                     studio.importing.toggle();studio.sharing=false;studio.importDraft="";studio.importFailed=false;studio.renaming=nil
                 }
-            }.font(LauncherStyle.font(11)).foregroundStyle(DiscordColors.ink(0.42)).frame(height:16)
+            }.foregroundStyle(DiscordColors.ink(0.42)).frame(height:16)
         }
         .padding(.top,2).padding(.horizontal,20).padding(.bottom,14)
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.3),value:studio.sharing)
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.3),value:studio.importing)
     }
     private func tag(_ text:String,icon:String?,back:Color,fore:Color)->some View {
-        HStack(spacing:4) { if let icon { DesignIcon(icon,size:13) };Text(text) }
-            .font(LauncherStyle.font(11,.bold)).foregroundStyle(fore)
+        HStack(spacing:4) { if let icon { DesignIcon(icon,size:13) };Text(text).designFont(11,.bold) }
+            .foregroundStyle(fore)
             .padding(.leading,icon == nil ? 8 : 6).padding(.trailing,8).frame(height:22)
-            .background(back,in:RoundedRectangle(cornerRadius:7,style:.continuous)).fixedSize()
+            .background(back,in:RoundedRectangle(cornerRadius:7)).fixedSize()
     }
     private func smallButton(_ title:String,icon:String,color:Color,_ action:@escaping ()->Void)->some View {
-        Button(action:action) { HStack(spacing:4) { DesignIcon(icon,size:11);Text(title) }.font(LauncherStyle.font(11,.semibold)).foregroundStyle(color) }
+        Button(action:action) { HStack(spacing:4) { DesignIcon(icon,size:11);Text(title).designFont(11,.semibold) }.foregroundStyle(color) }
             .buttonStyle(.plain)
     }
     private var importPanel:some View {
@@ -179,13 +186,13 @@ private struct GalleryCaption: View {
                         studio.importFailed=false
                         let upper=draft.uppercased();if upper != draft { studio.importDraft=upper }
                     }
-                FillButton(title:L("Add"),height:26,size:12,radius:7) { studio.importCode() }
+                FillButton(title:L("Add"),height:26,size:12,radius:7,padding:11,weight:.bold) { studio.importCode() }
             }
             .padding(.leading,11).padding(.trailing,4).frame(width:340,height:38)
-            .background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:10,style:.continuous))
-            .overlay { if studio.importFailed { RoundedRectangle(cornerRadius:10,style:.continuous).strokeBorder(Color(red:1,green:110/255,blue:100/255).opacity(0.7),lineWidth:1.5) } }
+            .background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:10))
+            .overlay { if studio.importFailed { RoundedRectangle(cornerRadius:10).strokeBorder(Color(red:1,green:110/255,blue:100/255).opacity(0.7),lineWidth:1.5) } }
             Text(studio.importFailed ? L("No card has that code.") : L("Paste someone’s code to add their card."))
-                .font(LauncherStyle.font(11)).normalLines(size:11).foregroundStyle(studio.importFailed ? Color(red:1,green:130/255,blue:120/255) : DiscordColors.ink(0.45))
+                .designFont(11).foregroundStyle(studio.importFailed ? Color(red:1,green:130/255,blue:120/255) : DiscordColors.ink(0.45))
         }
     }
 }
@@ -197,7 +204,7 @@ private struct NameButton: View {
     @State private var inside=false
     var body:some View {
         Button(action:action) {
-            Text(name).font(LauncherStyle.font(18,.bold)).tracking(-0.3).foregroundStyle(.white).lineLimit(1)
+            Text(name).designFont(18,.bold).tracking(-0.3).foregroundStyle(.white).lineLimit(1)
                 .overlay(alignment:.bottom) {
                     Rectangle().stroke(style:StrokeStyle(lineWidth:1.5,dash:[4,3])).frame(height:0.1).offset(y:6)
                         .foregroundStyle(DiscordColors.ink(inside && renamable ? 0.5 : 0))
@@ -216,10 +223,10 @@ private struct MainButton: View {
     @State private var inside=false
     var body:some View {
         Button(action:action) {
-            HStack(spacing:6) { DesignIcon(icon,size:13);Text(title) }
-                .font(LauncherStyle.font(12.5,.bold)).foregroundStyle(.white)
+            HStack(spacing:6) { DesignIcon(icon,size:13);Text(title).designFont(12.5,.bold) }
+                .foregroundStyle(.white)
                 .padding(.leading,13).padding(.trailing,16).frame(height:32)
-                .background(inside ? DiscordColors.fillHover : DiscordColors.fill,in:RoundedRectangle(cornerRadius:9,style:.continuous))
+                .background(inside ? DiscordColors.fillHover : DiscordColors.fill,in:RoundedRectangle(cornerRadius:9))
                 .compositingGroup().shadow(color:DiscordColors.pick.opacity(0.28),radius:9,y:6).contentShape(Rectangle())
         }.buttonStyle(.plain).onHover { inside=$0 }
     }
@@ -236,7 +243,7 @@ private struct ActButton: View {
             DesignIcon(icon,size:14)
                 .foregroundStyle(on ? Color(red:1,green:176/255,blue:128/255) : inside && enabled ? .white : DiscordColors.ink(0.75))
                 .frame(width:32,height:32)
-                .background(on ? DiscordColors.accent.opacity(0.2) : .white.opacity(inside && enabled ? 0.12 : 0.06),in:RoundedRectangle(cornerRadius:9,style:.continuous))
+                .background(on ? DiscordColors.accent.opacity(0.2) : .white.opacity(inside && enabled ? 0.12 : 0.06),in:RoundedRectangle(cornerRadius:9))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain).disabled(!enabled).opacity(enabled ? 1 : 0.35).onHover { inside=$0 }
@@ -254,13 +261,13 @@ private struct SharePanel: View {
                 Text(verbatim:code).font(.system(size:code.count > 30 ? 13 : 16,weight:.bold,design:.monospaced)).tracking(code.count > 30 ? 0.3 : 1.5)
                     .foregroundStyle(.white).multilineTextAlignment(.center).lineLimit(3).textSelection(.enabled)
                     .frame(maxWidth:.infinity).padding(.vertical,6)
-                FillButton(title:studio.copied ? L("Copied") : L("Copy"),height:26,size:12,radius:7) {
+                FillButton(title:studio.copied ? L("Copied") : L("Copy"),height:26,size:12,radius:7,padding:11,weight:.bold) {
                     NSPasteboard.general.clearContents();NSPasteboard.general.setString(code,forType:.string);studio.copied=true
                 }
             }
             .padding(.leading,11).padding(.trailing,4).frame(minHeight:38).frame(maxWidth:code.count > 12 ? 420 : 230)
-            .background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:10,style:.continuous))
-            Text(L("Only your choices travel: no stats, no BattleTag.")).font(LauncherStyle.font(11)).normalLines(size:11).foregroundStyle(DiscordColors.ink(0.45))
+            .background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:10))
+            Text(L("Only your choices travel: no stats, no BattleTag.")).designFont(11).foregroundStyle(DiscordColors.ink(0.45))
         }
     }
 }

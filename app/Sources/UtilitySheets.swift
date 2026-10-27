@@ -17,14 +17,15 @@ enum SettingsTab:String, CaseIterable, Identifiable {
         case .advanced: return L("Advanced")
         }
     }
+    /// The design's icons (Lucide, and Discord's mark).
     var symbol:String {
         switch self {
-        case .general: return "gearshape"
+        case .general: return "lucide:settings"
         case .discord: return "ic:baseline-discord"
-        case .display: return "display"
-        case .graphics: return "cube"
-        case .audio: return "speaker.wave.2"
-        case .advanced: return "gearshape.2"
+        case .display: return "lucide:monitor"
+        case .graphics: return "lucide:box"
+        case .audio: return "lucide:volume-2"
+        case .advanced: return "lucide:cog"
         }
     }
     /// Discord's tab shows its mark in Discord's own blue.
@@ -64,7 +65,7 @@ struct SettingsSheet:View {
         DesignTipLayer(tips:studio.tips) {
             VStack(spacing:0) {
                 VStack(spacing:14) {
-                    LauncherHeading(title:L("Settings"),subtitle:"",compact:true).frame(height:34)
+                    LauncherHeading(title:L("Settings"),subtitle:"",compact:true,color:DiscordColors.body).frame(height:34,alignment:.top)
                     LauncherTabs(tabs:SettingsTab.allCases.filter { $0 != .discord || model.showsDiscord },selection:$model.settingsTab,width:72,spacing:4,
                                  title:\.title,symbol:\.symbol,tint:\.tint)
                 }
@@ -88,7 +89,7 @@ struct SettingsSheet:View {
         }
         .font(LauncherStyle.font(14))
             .frame(width:LauncherStyle.sheetWidth,height:LauncherStyle.largeSheetHeight)
-            .tint(.primary).background { LauncherBackground() }
+            .tint(.primary).background { LauncherBackground(settings:true) }
             // Settings opens on Discord's own tab next time, not inside Customize; an erase waiting to be undone happens now.
             .onDisappear { model.discordStudio.closePage() }
             .onReceive(NotificationCenter.default.publisher(for:NSApplication.didChangeScreenParametersNotification)) { _ in
@@ -97,7 +98,7 @@ struct SettingsSheet:View {
             }
             // Battle.net or Overwatch may have opened or closed while the player was away,
             // and the microphone been turned on or off in System Settings.
-            .onAppear { model.checkRunning() }
+            .onAppear { model.checkRunning();model.discordStudio.settingsOpened() }
             .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in
                 model.checkRunning();microphoneAccess=Microphone.access;inputMonitoring=InputMonitoring.access
             }
@@ -131,14 +132,18 @@ struct SettingsSheet:View {
             } message: { Text(clearShaderCacheMessage) }
     }
     /// Uninstall lives here, always visible and apart from the everyday settings; it opens its own confirmation.
+    /// As the design draws it: a red Uninstall with Lucide's bin, and Done on a quiet capsule.
     private var footer:some View {
         HStack {
             Button(role:.destructive) { model.sheet = .uninstall } label: {
-                Label(L("Uninstall {0}…",Brand.name),systemImage:"trash").font(LauncherStyle.font(13,.medium))
-            }.buttonStyle(.borderless).foregroundStyle(.red).disabled(model.uninstall == .working)
+                HStack(spacing:6) { DesignIcon("lucide:trash-2",size:13);Text(L("Uninstall {0}…",Brand.name)).designFont(13,.medium) }.contentShape(Rectangle())
+            }.buttonStyle(.plain).foregroundStyle(.red).disabled(model.uninstall == .working).opacity(model.uninstall == .working ? 0.4 : 1)
                 .help(L("Move {0}, Battle.net and Overwatch to the Trash",Brand.name))
             Spacer()
-            Button(L("Done")) { dismiss() }.buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.large).keyboardShortcut(.cancelAction)
+            Button { dismiss() } label: {
+                Text(L("Done")).designFont(13,.medium).foregroundStyle(DiscordColors.body)
+                    .padding(.horizontal,16).frame(height:30).background(DiscordColors.veil(0.1),in:Capsule()).contentShape(Capsule())
+            }.buttonStyle(.plain).keyboardShortcut(.cancelAction)
         }.frame(height:30)
     }
     @ViewBuilder private var page:some View {

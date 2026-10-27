@@ -26,13 +26,71 @@ extension DiscordColors {
     }
     /// The design's "#fff": white on dark, the label colour on light.
     static let bright=Color(nsColor:NSColor(name:nil) { $0.bestMatch(from:[.darkAqua,.aqua]) == .darkAqua ? .white : .labelColor })
+    /// The design's text where it gives no colour of its own (its page's rgba(255,255,255,0.92)); the label colour on light.
+    static let body=Color(nsColor:NSColor(name:nil) { $0.bestMatch(from:[.darkAqua,.aqua]) == .darkAqua ? NSColor(white:1,alpha:0.92) : .labelColor })
     /// A white veil of the given strength (black in light mode): the design's rgba(255,255,255,a) surfaces.
     static func veil(_ alpha:Double)->Color {
         Color(nsColor:NSColor(name:nil) { $0.bestMatch(from:[.darkAqua,.aqua]) == .darkAqua ? NSColor(white:1,alpha:alpha) : NSColor(white:0,alpha:alpha) })
     }
-    /// The design's ribbon of colour (Customize, the gliding underlines): amber, orange, pink, violet, orange.
-    static let ribbon=[Color(red:1,green:184/255,blue:92/255),Color(red:1,green:128/255,blue:64/255),Color(red:1,green:92/255,blue:138/255),
-                       Color(red:214/255,green:98/255,blue:230/255),Color(red:236/255,green:106/255,blue:46/255),Color(red:1,green:184/255,blue:92/255)]
+    /// The design's ribbon of colour (Customize, the gliding underlines): amber, orange, pink, violet, orange, amber,
+    /// blended as its browser blends them ("in oklch": through OKLCH, the shorter way round the hues, which keeps
+    /// the colours between them bright), in steps fine enough not to show.
+    static let ribbon:[Gradient.Stop]={
+        let colors:[(Double,Double,Double)]=[(255,184,92),(255,128,64),(255,92,138),(214,98,230),(236,106,46),(255,184,92)]
+        let points=colors.map { OKLCH.point($0.0/255,$0.1/255,$0.2/255) }
+        var stops:[Gradient.Stop]=[]
+        for index in 0..<points.count-1 {
+            let a=points[index],b=points[index+1]
+            var turn=b.h-a.h
+            if turn > Double.pi { turn -= 2*Double.pi } else if turn < -Double.pi { turn += 2*Double.pi }
+            for step in 0..<8 {
+                let t=Double(step)/8
+                stops.append(.init(color:OKLCH.color(a.l+(b.l-a.l)*t,a.c+(b.c-a.c)*t,a.h+turn*t),location:(Double(index)+t)/Double(points.count-1)))
+            }
+        }
+        stops.append(.init(color:OKLCH.color(points.last!.l,points.last!.c,points.last!.h),location:1))
+        return stops
+    }()
+}
+extension DiscordColors {
+    /// The profile banner's sweep: indigo, violet at 55%, pink (the design's OKLCH colours), blended in OKLab as its browser
+    /// blends a gradient of such colours.
+    static let banner:[Gradient.Stop]=OKLCH.labStops([(0.42,0.15,285,0),(0.52,0.19,315,0.55),(0.6,0.19,345,1)])
+}
+/// sRGB to OKLCH and back (Björn Ottosson's OKLab), for blending as CSS's "in oklch" does; out-of-range channels
+/// are clipped, as the browser clips them.
+private enum OKLCH {
+    /// Stops blended straight through OKLab between OKLCH colours (lightness, chroma, hue in degrees, location).
+    static func labStops(_ points:[(Double,Double,Double,Double)])->[Gradient.Stop] {
+        var stops:[Gradient.Stop]=[]
+        for index in 0..<points.count-1 {
+            let a=points[index],b=points[index+1],ha=a.2*Double.pi/180,hb=b.2*Double.pi/180
+            let (aa,ab,ba,bb)=(a.1*cos(ha),a.1*sin(ha),b.1*cos(hb),b.1*sin(hb))
+            for step in 0..<8 {
+                let t=Double(step)/8,x=aa+(ba-aa)*t,y=ab+(bb-ab)*t
+                stops.append(.init(color:color(a.0+(b.0-a.0)*t,(x*x+y*y).squareRoot(),atan2(y,x)),location:a.3+(b.3-a.3)*t))
+            }
+        }
+        let last=points[points.count-1]
+        stops.append(.init(color:color(last.0,last.1,last.2*Double.pi/180),location:last.3))
+        return stops
+    }
+    static func point(_ r:Double,_ g:Double,_ b:Double)->(l:Double,c:Double,h:Double) {
+        func linear(_ x:Double)->Double { x <= 0.04045 ? x/12.92 : pow((x+0.055)/1.055,2.4) }
+        let (R,G,B)=(linear(r),linear(g),linear(b))
+        let l=cbrt(0.4122214708*R+0.5363325363*G+0.0514459929*B),m=cbrt(0.2119034982*R+0.6806995451*G+0.1073969566*B)
+        let s=cbrt(0.0883024619*R+0.2817188376*G+0.6299787005*B)
+        let L=0.2104542553*l+0.7936177850*m-0.0040720468*s,A=1.9779984951*l-2.4285922050*m+0.4505937099*s
+        let Bb=0.0259040371*l+0.7827717662*m-0.8086757660*s
+        return (L,(A*A+Bb*Bb).squareRoot(),atan2(Bb,A))
+    }
+    static func color(_ L:Double,_ C:Double,_ h:Double)->Color {
+        let a=C*cos(h),b=C*sin(h)
+        let l=pow(L+0.3963377774*a+0.2158037573*b,3),m=pow(L-0.1055613458*a-0.0638541728*b,3),s=pow(L-0.0894841775*a-1.2914855480*b,3)
+        func encoded(_ x:Double)->Double { min(max(x <= 0.0031308 ? 12.92*x : 1.055*pow(x,1/2.4)-0.055,0),1) }
+        return Color(.sRGB,red:encoded(4.0767416621*l-3.3077115913*m+0.2309699292*s),green:encoded(-1.2684380046*l+2.6097574011*m-0.3413193965*s),
+                     blue:encoded(-0.0041960863*l-0.7034186147*m+1.7076147010*s))
+    }
 }
 
 /// One of the design's icons, at a size (its height, as the design sizes them), in the foreground style.
@@ -68,6 +126,10 @@ struct DesignIcon: View {
         "ic:baseline-discord":(24,24,#"<path fill="currentColor" d="M19.27 5.33C17.94 4.71 16.5 4.26 15 4a.1.1 0 0 0-.07.03c-.18.33-.39.76-.53 1.09a16.1 16.1 0 0 0-4.8 0c-.14-.34-.35-.76-.54-1.09c-.01-.02-.04-.03-.07-.03c-1.5.26-2.93.71-4.27 1.33c-.01 0-.02.01-.03.02c-2.72 4.07-3.47 8.03-3.1 11.95c0 .02.01.04.03.05c1.8 1.32 3.53 2.12 5.24 2.65c.03.01.06 0 .07-.02c.4-.55.76-1.13 1.07-1.74c.02-.04 0-.08-.04-.09c-.57-.22-1.11-.48-1.64-.78c-.04-.02-.04-.08-.01-.11c.11-.08.22-.17.33-.25c.02-.02.05-.02.07-.01c3.44 1.57 7.15 1.57 10.55 0c.02-.01.05-.01.07.01c.11.09.22.17.33.26c.04.03.04.09-.01.11c-.52.31-1.07.56-1.64.78c-.04.01-.05.06-.04.09c.32.61.68 1.19 1.07 1.74c.03.01.06.02.09.01c1.72-.53 3.45-1.33 5.25-2.65c.02-.01.03-.03.03-.05c.44-4.53-.73-8.46-3.1-11.95c-.01-.01-.02-.02-.04-.02M8.52 14.91c-1.03 0-1.89-.95-1.89-2.12s.84-2.12 1.89-2.12c1.06 0 1.9.96 1.89 2.12c0 1.17-.84 2.12-1.89 2.12m6.97 0c-1.03 0-1.89-.95-1.89-2.12s.84-2.12 1.89-2.12c1.06 0 1.9.96 1.89 2.12c0 1.17-.83 2.12-1.89 2.12"/>"#),
         "lucide:power":(24,24,#"<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 2v10m6.4-5.4a9 9 0 1 1-12.77.04"/>"#),
         "lucide:power-off":(24,24,#"<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.36 6.64A9 9 0 0 1 20.77 15M6.16 6.16a9 9 0 1 0 12.68 12.68M12 2v4M2 2l20 20"/>"#),
+        "lucide:settings":(24,24,#"<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0a2.34 2.34 0 0 0 3.319 1.915a2.34 2.34 0 0 1 2.33 4.033a2.34 2.34 0 0 0 0 3.831a2.34 2.34 0 0 1-2.33 4.033a2.34 2.34 0 0 0-3.319 1.915a2.34 2.34 0 0 1-4.659 0a2.34 2.34 0 0 0-3.32-1.915a2.34 2.34 0 0 1-2.33-4.033a2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></g>"#),
+        "lucide:box":(24,24,#"<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7l8.7 5l8.7-5M12 22V12"/></g>"#),
+        "lucide:volume-2":(24,24,#"<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298zM16 9a5 5 0 0 1 0 6m3.364 3.364a9 9 0 0 0 0-12.728"/>"#),
+        "lucide:cog":(24,24,#"<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M11 10.27L7 3.34m4 10.39l-4 6.93M12 22v-2m0-18v2m2 8h8m-5 8.66l-1-1.73m1-15.59l-1 1.73M2 12h2m16.66 5l-1.73-1m1.73-9l-1.73 1M3.34 17l1.73-1M3.34 7l1.73 1"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="12" r="8"/></g>"#),
         "lucide:monitor":(24,24,#"<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8m-4-4v4"/></g>"#),
         "lucide:smartphone":(24,24,#"<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></g>"#),
         "lucide:mouse":(24,24,#"<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></g>"#),
@@ -173,6 +235,36 @@ enum DiscordFont {
         return font
     }
 }
+/// The app's font (SF Pro) as the design's browser sets it: at a CSS weight on the font's own weight axis. AppKit's
+/// named weights sit a little off those (its medium is lighter than 500 and its semibold than 600), so text set with
+/// them runs narrower than the design's.
+enum SystemFont {
+    private static let lock=NSLock()
+    nonisolated(unsafe) private static var fonts:[String:NSFont]=[:]
+    static func nsFont(_ size:CGFloat,_ weight:Int=400)->NSFont {
+        lock.lock();defer { lock.unlock() }
+        let key="\(size)/\(weight)"
+        if let font=fonts[key] { return font }
+        let descriptor=CTFontDescriptorCreateCopyWithVariation(CTFontCopyFontDescriptor(NSFont.systemFont(ofSize:size) as CTFont),0x77676874 as CFNumber,CGFloat(weight))
+        let font=CTFontCreateWithFontDescriptor(descriptor,size,nil) as NSFont
+        fonts[key]=font
+        return font
+    }
+    /// A SwiftUI weight as CSS numbers it.
+    static func css(_ weight:Font.Weight)->Int {
+        switch weight {
+        case .ultraLight: return 100
+        case .thin: return 200
+        case .light: return 300
+        case .medium: return 500
+        case .semibold: return 600
+        case .bold: return 700
+        case .heavy: return 800
+        case .black: return 900
+        default: return 400
+        }
+    }
+}
 extension Font {
     /// Discord's text, as the design shows it (Noto Sans).
     static func discord(_ size:CGFloat,_ weight:Int=400)->Font { Font(DiscordFont.nsFont(size,weight)) }
@@ -190,44 +282,310 @@ extension AnyTransition {
     }
 }
 
-/// Text set as the design's CSS sets it: each line its `line-height` tall, the extra split above and below every line.
-enum DesignText {
-    private static let lock=NSLock()
-    nonisolated(unsafe) private static var heights:[String:CGFloat]=[:]
-    /// How tall SwiftUI makes one line of a font (measured on macOS 26: the system font's lines are as tall as
-    /// CoreText's frame setter makes them, Noto Sans's as AppKit's text measuring makes them).
-    static func natural(_ font:NSFont)->CGFloat {
-        lock.lock();defer { lock.unlock() }
-        let key="\(font.fontName)/\(font.pointSize)"
-        if let height=heights[key] { return height }
-        let text=NSAttributedString(string:"Hg",attributes:[.font:font]),room=CGSize(width:1000,height:1000)
-        let height:CGFloat
-        if font.familyName == NSFont.systemFont(ofSize:font.pointSize).familyName {
-            height=CTFramesetterSuggestFrameSizeWithConstraints(CTFramesetterCreateWithAttributedString(text as CFAttributedString),CFRange(location:0,length:0),nil,room,nil).height
-        } else {
-            height=text.boundingRect(with:room,options:[.usesLineFragmentOrigin,.usesFontLeading]).height
-        }
-        heights[key]=height
-        return height
+/// The design's easings that a cubic curve can't draw, each from 0 to 1 over progress 0 to 1 (overshooting on the
+/// way): its damped spring (springEase(0.55), sampled into CSS's linear()), and anime.js's outElastic and outBack.
+enum DesignEase {
+    static func spring(_ x:Double)->Double {
+        guard x < 1 else { return 1 }
+        let zeta=0.55,w=6.4/zeta,wd=w*(1-zeta*zeta).squareRoot()
+        return 1-exp(-zeta*w*x)*(cos(wd*x)+(zeta*w/wd)*sin(wd*x))
     }
-    /// A line of the font as the browser the design was made in makes it ("normal"): its ascender and its
-    /// descender, each rounded. SwiftUI rounds the system font's descender up, so its lines can be a point taller.
-    static func normal(_ font:NSFont)->CGFloat { font.ascender.rounded()+(-font.descender).rounded() }
+    static func outElastic(_ t:Double,amplitude a:Double=1,period p:Double=0.5)->Double {
+        guard t > 0 else { return 0 }
+        guard t < 1 else { return 1 }
+        let s=p/(2*Double.pi)*asin(1/a)
+        return 1+a*pow(2,-10*t)*sin((t-s)*2*Double.pi/p)
+    }
+    static func outBack(_ t:Double,overshoot c:Double=1.70158)->Double {
+        let u=1-min(max(t,0),1)
+        return 1-((c+1)*u*u*u-c*u*u)
+    }
+    static func bezier(_ t:Double,_ x1:Double,_ y1:Double,_ x2:Double,_ y2:Double)->Double {
+        UnitCurve.bezier(startControlPoint:UnitPoint(x:x1,y:y1),endControlPoint:UnitPoint(x:x2,y:y2)).value(at:min(max(t,0),1))
+    }
+}
+
+/// The design's anime.js easings as animations: `kind` over `duration` seconds.
+struct DesignCurve: CustomAnimation {
+    enum Kind: Hashable { case outBack(Double),outElastic(Double,Double),outCubic,outQuad,spring }
+    let kind:Kind
+    let duration:Double
+    func animate<V:VectorArithmetic>(value:V,time:TimeInterval,context:inout AnimationContext<V>)->V? {
+        guard time < duration else { return nil }
+        let t=time/duration
+        switch kind {
+        case .outBack(let overshoot): return value.scaled(by:DesignEase.outBack(t,overshoot:overshoot))
+        case .outElastic(let amplitude,let period): return value.scaled(by:DesignEase.outElastic(t,amplitude:amplitude,period:period))
+        case .outCubic: return value.scaled(by:1-pow(1-t,3))
+        case .outQuad: return value.scaled(by:1-(1-t)*(1-t))
+        case .spring: return value.scaled(by:DesignEase.spring(t))
+        }
+    }
+}
+extension Animation {
+    static func design(_ kind:DesignCurve.Kind,_ duration:Double)->Animation { Animation(DesignCurve(kind:kind,duration:duration)) }
+    /// CSS's `ease`.
+    static func cssEase(_ duration:Double)->Animation { .timingCurve(0.25,0.1,0.25,1,duration:duration) }
+}
+
+/// Where a part starts as it arrives (the design's keyframes' "from").
+struct ArrivalStart: Equatable {
+    var x:CGFloat=0
+    var y:CGFloat=0
+    var opacity:Double=1
+    var scale:CGFloat=1
+}
+/// A part arriving, as the design's CSS animations run: from where it starts to where it is, along its own curve, when
+/// it's first shown (unless told not to) and whenever `trigger` changes (another line, another badge); nil, it just
+/// shows. Each arrival is one more run, animated (ArrivalEffect), so it plays whatever else is or isn't animating, and
+/// it waits at its start while delayed (CSS's "backwards").
+struct PartArrival: ViewModifier {
+    let trigger:AnyHashable?
+    let arrival:(start:ArrivalStart,animation:Animation)?
+    var onAppear=true
+    @State private var from:ArrivalStart
+    @State private var runs=0.0
+    @State private var waiting:Bool
+    init(trigger:AnyHashable?,_ arrival:(start:ArrivalStart,animation:Animation)?,onAppear:Bool=true) {
+        self.trigger=trigger;self.arrival=arrival;self.onAppear=onAppear
+        _from=State(initialValue:arrival?.start ?? ArrivalStart());_waiting=State(initialValue:onAppear && arrival != nil)
+    }
+    func body(content:Content)->some View {
+        content.modifier(ArrivalEffect(phase:runs,runs:runs,from:from,waiting:waiting))
+            .onAppear {
+                guard waiting,let arrival else { return }
+                withAnimation(arrival.animation) { waiting=false;runs+=1 }
+            }
+            .onChange(of:trigger) {
+                guard let arrival else { return }
+                from=arrival.start
+                withAnimation(arrival.animation) { runs+=1 }
+            }
+    }
+}
+/// How far a part has arrived: the animated runs (`phase`) behind the runs asked for, one at most (overshooting past them
+/// as a spring does); waiting to be shown, at the start.
+private struct ArrivalEffect: ViewModifier, Animatable {
+    var phase:Double
+    let runs:Double
+    let from:ArrivalStart
+    let waiting:Bool
+    var animatableData:Double { get { phase } set { phase=newValue } }
+    func body(content:Content)->some View {
+        let left=waiting ? 1 : min(1,runs-phase)
+        content.scaleEffect(1+(from.scale-1)*left).offset(x:from.x*left,y:from.y*left).opacity(1+(from.opacity-1)*left)
+    }
+}
+/// How the design's highlights glide from one item to another (its placeThumb, placeGlides and placeVGlides): over
+/// `duration`, the leading edge reaches the new place by `turn` (easing in) while the trailing edge goes only `lead` of
+/// the way, the mark thinning to `squash`; then the trailing edge catches up and it settles with the spring. With
+/// `atLeast`, the stretched mark is never shorter than the new one.
+struct GlideStyle {
+    var duration=0.76
+    var turn=0.42
+    var lead:CGFloat=0.18
+    var squash:CGFloat=0.82
+    var atLeast=false
+    /// The level words.
+    static let words=GlideStyle()
+    /// A row of tabs.
+    static let tabs=GlideStyle(duration:0.64,squash:0.8,atLeast:true)
+    /// A column of rows (the rail).
+    static let rows=GlideStyle(duration:0.6,turn:0.4,lead:0.2,squash:1,atLeast:true)
+    /// Where the mark is (its start and length along the axis) and how thin, `progress` of the way.
+    func span(from a:(start:CGFloat,length:CGFloat),to b:(start:CGFloat,length:CGFloat),at progress:Double)->(start:CGFloat,length:CGFloat,squash:CGFloat) {
+        guard progress < 1,a.start != b.start || a.length != b.length,a.length > 0 else { return (b.start,b.length,1) }
+        let ahead=b.start > a.start
+        let middle=ahead ? a.start+(b.start-a.start)*lead : b.start
+        var length=ahead ? b.start+b.length-middle : a.start+a.length-(a.start-b.start)*lead-b.start
+        if atLeast { length=max(length,b.length) }
+        if progress < turn {
+            let eased=CGFloat(DesignEase.bezier(progress/turn,0.5,0,0.75,0.4))
+            return (a.start+(middle-a.start)*eased,a.length+(length-a.length)*eased,1-(1-squash)*eased)
+        }
+        let eased=CGFloat(DesignEase.spring((progress-turn)/(1-turn)))
+        return (middle+(b.start-middle)*eased,length+(b.length-length)*eased,squash+(1-squash)*eased)
+    }
+}
+/// Each item's place, for the gliding mark (glider).
+private struct GlideItems<Key:Hashable>: PreferenceKey {
+    static var defaultValue:[Key:Anchor<CGRect>] { [:] }
+    static func reduce(value:inout [Key:Anchor<CGRect>],nextValue:()->[Key:Anchor<CGRect>]) { value.merge(nextValue()) { $1 } }
+}
+/// A mark behind the chosen one of a stack's items that glides to another as the design's do (GlideStyle): along the
+/// stack's axis it takes the chosen item's place; across it, `across` of the item (start and length), or the item's own.
+private struct Glider<Key:Hashable,Mark:View>: ViewModifier {
+    let chosen:Key?
+    let style:GlideStyle
+    let axis:Axis
+    let across:((CGRect)->(start:CGFloat,length:CGFloat))?
+    let mark:Mark
+    @State private var previous:Key?
+    @State private var glides=0
+    func body(content:Content)->some View {
+        content
+            .backgroundPreferenceValue(GlideItems<Key>.self) { items in
+                GeometryReader { proxy in
+                    if let chosen,let anchor=items[chosen] {
+                        let to=proxy[anchor],from=previous.flatMap { items[$0] }.map { proxy[$0] } ?? to
+                        mark.keyframeAnimator(initialValue:1.0,trigger:glides) { mark,progress in
+                            let along=axis == .horizontal
+                            let span=style.span(from:along ? (from.minX,from.width) : (from.minY,from.height),to:along ? (to.minX,to.width) : (to.minY,to.height),at:progress)
+                            let side=across?(to) ?? (along ? (to.minY,to.height) : (to.minX,to.width))
+                            mark.frame(width:max(0,along ? span.length : side.length),height:max(0,along ? side.length : span.length))
+                                .scaleEffect(x:along ? 1 : span.squash,y:along ? span.squash : 1)
+                                .offset(x:along ? span.start : side.start,y:along ? side.start : span.start)
+                        } keyframes:{ _ in
+                            MoveKeyframe(0.0)
+                            LinearKeyframe(1.0,duration:style.duration)
+                        }
+                    }
+                }
+            }
+            .onChange(of:chosen) { old,_ in previous=old;glides+=1 }
+    }
 }
 extension View {
-    /// Lines `multiple` times the font's size tall, as the design's `line-height`: the extra goes between lines
-    /// (line spacing) and around the text (padding), placed so the first line sits where the browser puts it, in
-    /// the middle of the extra.
-    func lineHeight(_ multiple:CGFloat,_ font:NSFont)->some View {
-        let line=font.pointSize*multiple,natural=DesignText.natural(font),top=max(0,(line-DesignText.normal(font))/2)
-        return lineSpacing(max(0,line-natural)).padding(.top,top).padding(.bottom,line-natural-top)
+    /// A mark gliding behind the chosen one of this stack's items (each marked with glideItem), as the design's do.
+    func glider<Key:Hashable,Mark:View>(_ chosen:Key?,style:GlideStyle,axis:Axis,across:((CGRect)->(start:CGFloat,length:CGFloat))?=nil,
+                                       @ViewBuilder mark:()->Mark)->some View {
+        modifier(Glider(chosen:chosen,style:style,axis:axis,across:across,mark:mark()))
     }
-    /// The same in the app's own font (LauncherStyle.font) at a size.
-    func lineHeight(_ multiple:CGFloat,size:CGFloat)->some View { lineHeight(multiple,NSFont.systemFont(ofSize:size)) }
-    /// Lines of the app's font at a size as tall as the browser makes them when the design gives no line height.
-    /// Only for text whose every line is this font.
-    func normalLines(size:CGFloat,weight:NSFont.Weight = .regular)->some View {
-        let font=NSFont.systemFont(ofSize:size,weight:weight),normal=DesignText.normal(font)
-        return lineHeight(normal < DesignText.natural(font) ? .exact(points:normal) : nil)
+    /// One of the items a glider's mark moves between.
+    func glideItem<Key:Hashable>(_ key:Key)->some View { anchorPreference(key:GlideItems<Key>.self,value:.bounds) { [key:$0] } }
+}
+
+extension View {
+    /// The design's dcPop as the part shows: fading in while rising eight points (its curve, unless told another), after
+    /// `delay`.
+    func popIn(_ duration:Double,delay:Double=0,curve:Animation?=nil)->some View {
+        modifier(PartArrival(trigger:nil,(ArrivalStart(y:8,opacity:0),(curve ?? .timingCurve(0.22,1,0.36,1,duration:duration)).delay(delay))))
     }
+    /// The design's dcFade as the part shows: fading in (CSS's `ease`), after `delay`.
+    func fadeIn(_ duration:Double,delay:Double=0)->some View {
+        modifier(PartArrival(trigger:nil,(ArrivalStart(opacity:0),Animation.cssEase(duration).delay(delay))))
+    }
+}
+
+/// Text set as the design's browser sets it (Chrome, at 2x): a line's ascent and descent are the font's, each rounded to
+/// the half point; a `line-height` other than the two together adds or takes the difference, half above the text
+/// (floored to the half point) and the rest below. "normal" is the two alone. Weight doesn't change them.
+enum DesignText {
+    /// The width the browser gives text under `text-wrap: balance`: the narrowest at which it takes no more lines than
+    /// it does at `width`, found by halving as the browser finds it.
+    static func balanced(_ text:String,_ font:NSFont,within width:CGFloat)->CGFloat {
+        let storage=NSTextStorage(string:text,attributes:[.font:font]),layout=NSLayoutManager(),box=NSTextContainer(size:CGSize(width:width,height:.greatestFiniteMagnitude))
+        box.lineFragmentPadding=0;layout.addTextContainer(box);storage.addLayoutManager(layout)
+        func lines(_ width:CGFloat)->Int {
+            box.size=CGSize(width:width,height:.greatestFiniteMagnitude)
+            var count=0,index=0
+            while index < layout.numberOfGlyphs { var range=NSRange();layout.lineFragmentRect(forGlyphAt:index,effectiveRange:&range);index=NSMaxRange(range);count+=1 }
+            return count
+        }
+        let count=lines(width)
+        guard count > 1 else { return width }
+        var low:CGFloat=0,high=width
+        while high-low > 0.25 { let middle=(low+high)/2;if lines(middle) > count { low=middle } else { high=middle } }
+        return ceil(high*2)/2
+    }
+    /// How tall a line is and where its baseline sits below the line's top, for a CSS line-height in points (nil: normal).
+    static func line(_ font:NSFont,_ height:CGFloat?)->(height:CGFloat,baseline:CGFloat) {
+        let ascent=(font.ascender*2).rounded()/2,descent=(-font.descender*2).rounded()/2,height=height ?? ascent+descent
+        return (height,ascent+(height-ascent-descent+0.001).rounded(.down)/2)
+    }
+}
+extension View {
+    /// Lines of a font as the design's browser sets them (DesignText): each `height` tall (the CSS line-height in
+    /// points; nil for "normal"), the baseline where the browser puts it. SwiftUI's exact line height puts a line's
+    /// baseline the font's size below the line's top, and the padding moves the text from there, its baseline (for
+    /// alignment) with it.
+    func cssLines(_ font:NSFont,_ height:CGFloat?=nil)->some View {
+        let line=DesignText.line(font,height),shift=line.baseline-font.pointSize
+        return ExactLines(line:line.height) { lineHeight(.exact(points:line.height)).padding(.top,shift).padding(.bottom,-shift) }
+    }
+    /// The app's font at a size and weight, set as the design sets it (SystemFont; `line`: its CSS line-height in
+    /// points, nil for normal). On a stack, every text in it is moved, and so is all else in it.
+    func designFont(_ size:CGFloat,_ weight:Font.Weight = .regular,line:CGFloat?=nil)->some View {
+        designFont(size,SystemFont.css(weight),line:line)
+    }
+    /// The same at a CSS weight between SwiftUI's (Customize's 650).
+    func designFont(_ size:CGFloat,_ weight:Int,line:CGFloat?=nil)->some View {
+        font(Font(SystemFont.nsFont(size,weight))).cssLines(NSFont.systemFont(ofSize:size),line)
+    }
+    /// Discord's font (Noto Sans) the same way.
+    func discordFont(_ size:CGFloat,_ weight:Int=400,line:CGFloat?=nil)->some View {
+        font(.discord(size,weight)).cssLines(DiscordFont.nsFont(size,weight),line)
+    }
+}
+
+/// A column as the design's flexbox lays one out: each view as tall as it asks, `spacing` apart, a `flexGrow` view
+/// taking what room is left. When they don't all fit, the `flexShrink` views give up height in proportion to their
+/// own, none below its least (its height when offered none), as the browser shrinks flex items.
+/// A text as tall as its lines add up to: SwiftUI rounds a text's height up to the pixel, where the browser adds
+/// lines of 17.4 points unrounded and only rounds where each thing is drawn (as SwiftUI does with positions).
+/// Anything else inside keeps its own height.
+private struct ExactLines: Layout {
+    let line:CGFloat
+    func sizeThatFits(proposal:ProposedViewSize,subviews:Subviews,cache:inout ())->CGSize {
+        subviews.reduce(CGSize.zero) { size,view in
+            let own=view.sizeThatFits(proposal),exact=(own.height/line).rounded()*line
+            return CGSize(width:max(size.width,own.width),height:max(size.height,own.height >= exact && own.height-exact < 0.5 ? exact : own.height))
+        }
+    }
+    func placeSubviews(in bounds:CGRect,proposal:ProposedViewSize,subviews:Subviews,cache:inout ()) {
+        for view in subviews { view.place(at:bounds.origin,proposal:ProposedViewSize(view.sizeThatFits(proposal))) }
+    }
+}
+
+struct FlexColumn: Layout {
+    var spacing:CGFloat=0
+    func sizeThatFits(proposal:ProposedViewSize,subviews:Subviews,cache:inout ())->CGSize {
+        let heights=heights(width:proposal.width,room:proposal.height,subviews)
+        return CGSize(width:proposal.width ?? subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0,
+                      height:proposal.height ?? heights.reduce(0,+)+gaps(subviews))
+    }
+    func placeSubviews(in bounds:CGRect,proposal:ProposedViewSize,subviews:Subviews,cache:inout ()) {
+        var y=bounds.minY
+        for (subview,height) in zip(subviews,heights(width:bounds.width,room:bounds.height,subviews)) {
+            subview.place(at:CGPoint(x:bounds.minX,y:y),proposal:ProposedViewSize(width:bounds.width,height:height))
+            y+=height+spacing
+        }
+    }
+    private func gaps(_ subviews:Subviews)->CGFloat { spacing*CGFloat(max(0,subviews.count-1)) }
+    private func heights(width:CGFloat?,room:CGFloat?,_ subviews:Subviews)->[CGFloat] {
+        let basis=subviews.map { $0[FlexGrow.self] ? 0 : $0.sizeThatFits(ProposedViewSize(width:width,height:nil)).height }
+        guard let room else { return basis }
+        let free=room-basis.reduce(0,+)-gaps(subviews)
+        var heights=basis
+        if free >= 0 {
+            let growing=subviews.indices.filter { subviews[$0][FlexGrow.self] }
+            for i in growing { heights[i]=free/CGFloat(growing.count) }
+            return heights
+        }
+        // The browser's way: share what's over among the views that can give, by their size; any that would go
+        // below its least stays there, and the rest is shared again among the others.
+        let least=subviews.map { $0[FlexShrink.self] ? $0.sizeThatFits(ProposedViewSize(width:width,height:0)).height : 0 }
+        var open=subviews.indices.filter { subviews[$0][FlexShrink.self] && basis[$0] > least[$0] }
+        while !open.isEmpty {
+            let fixed=subviews.indices.filter { !open.contains($0) }.reduce(0) { $0+heights[$1] }
+            let over=fixed+open.reduce(0) { $0+basis[$1] }+gaps(subviews)-room,total=open.reduce(0) { $0+basis[$1] }
+            guard over > 0 else { break }
+            var stuck:[Int]=[]
+            for i in open {
+                heights[i]=basis[i]-over*basis[i]/total
+                if heights[i] < least[i] { heights[i]=least[i];stuck.append(i) }
+            }
+            if stuck.isEmpty { break }
+            open.removeAll { stuck.contains($0) }
+        }
+        return heights
+    }
+}
+private struct FlexShrink: LayoutValueKey { static let defaultValue=false }
+private struct FlexGrow: LayoutValueKey { static let defaultValue=false }
+extension View {
+    /// In a FlexColumn: gives up height when the column is short of room, down to its least.
+    func flexShrink()->some View { layoutValue(key:FlexShrink.self,value:true) }
+    /// In a FlexColumn: takes the room left over.
+    func flexGrow()->some View { layoutValue(key:FlexGrow.self,value:true) }
 }

@@ -15,28 +15,30 @@ struct DiscordStage<Content:View,Controls:View>: View {
     @ViewBuilder var content:Content
     @ViewBuilder var controls:Controls
     var body:some View {
+        // The dots and the corners sit inside the stage's one-point border, as the design's do.
         ZStack {
-            DotPattern().fill(.white.opacity(0.05)).allowsHitTesting(false)
+            DotPattern().fill(.white.opacity(0.05)).padding(1).allowsHitTesting(false)
             content.padding(.top,top).frame(maxWidth:.infinity,maxHeight:.infinity)
         }
         .frame(maxWidth:.infinity).frame(height:height)
         .overlay(alignment:.topLeading) {
             HStack(spacing:6) {
                 DesignIcon("ic:baseline-discord",size:16).foregroundStyle(DiscordColors.ink(0.45))
-                    .frame(width:26,height:26).background(.white.opacity(0.05),in:RoundedRectangle(cornerRadius:8,style:.continuous))
+                    .frame(width:26,height:26).background(.white.opacity(0.05),in:RoundedRectangle(cornerRadius:8))
                 controls
-            }.padding(.leading,10).padding(.top,8)
+            }.padding(.leading,11).padding(.top,9)
         }
         .overlay(alignment:.topTrailing) {
             HStack(spacing:4) {
-                SceneChip(studio:studio)
+                // Where the player is says nothing at Basic, and nothing runs while off.
+                if studio.level != .normal && studio.power { SceneChip(studio:studio).transition(.identity) }
                 if power { PowerButton(studio:studio).transition(.afterMove) }
-            }.padding(.trailing,10).padding(.top,8)
+            }.padding(.trailing,11).padding(.top,9)
         }
         .overlay { if power && !studio.power { OffCover(studio:studio).transition(.opacity) } }
         .background(DiscordColors.stage)
-        .clipShape(RoundedRectangle(cornerRadius:20,style:.continuous))
-        .overlay { RoundedRectangle(cornerRadius:20,style:.continuous).strokeBorder(.white.opacity(0.06),lineWidth:1) }
+        .clipShape(RoundedRectangle(cornerRadius:20))
+        .overlay { RoundedRectangle(cornerRadius:20).strokeBorder(.white.opacity(0.06),lineWidth:1) }
         .environment(\.colorScheme,.dark)
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.52),value:height)
         .animation(.easeOut(duration:0.3),value:studio.power)
@@ -69,16 +71,16 @@ struct SceneChip: View {
                         .onAppear { withAnimation(.easeInOut(duration:0.8).repeatForever()) { pulse=true } }
                 }
                 DesignIcon(match ? "ph:sword-fill" : "ph:squares-four-fill",size:match ? 12.5 : 14)
-                Text(studio.sceneName)
+                Text(studio.sceneName).designFont(11.5,.semibold)
                 if studio.sceneVoice {
-                    Text(verbatim:"&").opacity(0.6)
+                    Text(verbatim:"&").designFont(11.5,.semibold).opacity(0.6)
                     DesignIcon("ph:users-three-fill",size:14)
-                    Text(L("Voice"))
+                    Text(L("Voice")).designFont(11.5,.semibold)
                 }
             }
-            .font(LauncherStyle.font(11.5,.semibold)).foregroundStyle(DiscordColors.ink(inside && studio.live == nil ? 0.85 : 0.5))
+            .foregroundStyle(DiscordColors.ink(inside && studio.live == nil ? 0.85 : 0.5))
             .padding(.leading,8).padding(.trailing,9).frame(height:26)
-            .background(inside && studio.live == nil ? .white.opacity(0.06) : .clear,in:RoundedRectangle(cornerRadius:8,style:.continuous))
+            .background(inside && studio.live == nil ? .white.opacity(0.06) : .clear,in:RoundedRectangle(cornerRadius:8))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).onHover { inside=$0 }
@@ -92,7 +94,7 @@ private struct PowerButton: View {
         Button { studio.setPower(!studio.power) } label: {
             DesignIcon("lucide:power",size:14)
                 .foregroundStyle(studio.power ? Color(red:90/255,green:220/255,blue:140/255) : DiscordColors.ink(0.6))
-                .frame(width:26,height:26).background(.white.opacity(studio.power ? 0.06 : 0.1),in:RoundedRectangle(cornerRadius:8,style:.continuous))
+                .frame(width:26,height:26).background(.white.opacity(studio.power ? 0.06 : 0.1),in:RoundedRectangle(cornerRadius:8))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -106,16 +108,20 @@ private struct OffCover: View {
     var body:some View {
         VStack(spacing:8) {
             DesignIcon("lucide:power-off",size:22).foregroundStyle(DiscordColors.ink(0.6))
-            Text(L("Discord card is off")).font(LauncherStyle.font(14,.semibold)).foregroundStyle(.white)
+            Text(L("Discord card is off")).designFont(14,.semibold).foregroundStyle(DiscordColors.body)
             Text(L("Recall stops reading the game log, disconnects from Discord and stops the timer. Nothing stays loaded."))
-                .font(LauncherStyle.font(12)).lineHeight(1.5,size:12).foregroundStyle(DiscordColors.ink(0.62)).multilineTextAlignment(.center).frame(maxWidth:300)
-            FillButton(title:L("Turn on"),height:30,size:12.5,radius:9) { studio.setPower(true) }.padding(.top,6)
+                .designFont(12,line:12*1.5).foregroundStyle(DiscordColors.ink(0.62)).multilineTextAlignment(.center).frame(maxWidth:300)
+            FillButton(title:L("Turn on"),height:30,size:12.5,radius:9,padding:14,weight:.bold) { studio.setPower(true) }.padding(.top,6)
         }
         .frame(maxWidth:.infinity,maxHeight:.infinity)
         .background(Color(red:23/255,green:24/255,blue:27/255).opacity(0.94))
     }
 }
 
+extension CoordinateSpaceProtocol where Self == NamedCoordinateSpace {
+    /// Discord's tab, for what's drawn across it (LevelFlow).
+    static var discordTab:NamedCoordinateSpace { .named("discordTab") }
+}
 /// Settings › Discord as one column: its own page (DiscordHome), Customize and the two pages. Going to Customize or a
 /// page folds Settings' title and tabs away (SettingsSheet) as the breadcrumb opens here, and the card's stage
 /// stays where it is, only changing height.
@@ -148,6 +154,9 @@ struct DiscordTab<Footer:View>: View {
             }
         }
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.52),value:studio.screen)
+        // Customize's sparks and light, across the tab.
+        .overlay(alignment:.topLeading) { if let flow=studio.levelFlow { LevelFlow(flow:flow,studio:studio) } }
+        .coordinateSpace(.discordTab)
     }
     private static var gone:AnyTransition { .opacity.animation(.linear(duration:0.06)) }
 }
@@ -159,9 +168,8 @@ struct DiscordHome<Footer:View>: View {
         VStack(alignment:.leading,spacing:10) {
             VStack(alignment:.leading,spacing:10) {
                 LevelWords(studio:studio)
-                // The design's line height (1.4) around the line as well as between lines.
                 Text(studio.power ? studio.level.detail : L("Off. Nothing runs until you turn it back on."))
-                    .font(LauncherStyle.font(12.5)).lineHeight(1.4,size:12.5).foregroundStyle(DiscordColors.ink(0.62)).padding(.leading,4)
+                    .designFont(12.5,line:12.5*1.45).foregroundStyle(DiscordColors.ink(0.62)).padding(.leading,4)
                 // The rows sit at the bottom, taking what room there is (DiscordRows).
                 Spacer(minLength:0)
                 DiscordRows(studio:studio).layoutPriority(1)
@@ -174,70 +182,232 @@ struct DiscordHome<Footer:View>: View {
         .padding(.top,14)
     }
 }
-/// A fine dashed outline marching slowly around the card while it's the player's own: it can be edited.
+/// A fine dashed outline marching slowly round the card while it's the player's own: it can be edited. As the design's,
+/// its dashes divide the outline exactly (no seam where it starts, the bottom's middle); it fades in (after
+/// Customize's light has traced the card, when that's running) and goes in a fifth of a second.
 struct MarchingOutline: View {
+    var delay:Double=0
+    @State private var shown=false
     @State private var phase:CGFloat=0
     var body:some View {
-        RoundedRectangle(cornerRadius:7.25,style:.continuous).inset(by:0.75)
-            .stroke(LinearGradient(stops:[.init(color:Color(red:1,green:184/255,blue:92/255),location:0),.init(color:Color(red:1,green:140/255,blue:70/255),location:0.3),
-                                          .init(color:Color(red:1,green:112/255,blue:104/255),location:0.55),.init(color:Color(red:1,green:92/255,blue:138/255),location:0.8),
-                                          .init(color:Color(red:214/255,green:98/255,blue:230/255),location:1)],startPoint:.bottom,endPoint:.top),
-                    style:StrokeStyle(lineWidth:1.5,lineCap:.round,dash:[5,5],dashPhase:phase))
-            .opacity(0.9).allowsHitTesting(false)
-            .onAppear { withAnimation(.linear(duration:1.2).repeatForever(autoreverses:false)) { phase = -10 } }
+        GeometryReader { box in
+            let outline=CardOutline(inset:0.75,radius:7.25),period=outline.period(in:box.size)
+            outline.stroke(LinearGradient(stops:CardOutline.colors,startPoint:.bottom,endPoint:.top),
+                           style:StrokeStyle(lineWidth:1.5,lineCap:.round,dash:[period/2,period/2],dashPhase:phase*period))
+                .onAppear { withAnimation(.linear(duration:1.2*period/10).repeatForever(autoreverses:false)) { phase = -1 } }
+        }
+        .opacity(shown ? 0.9 : 0).allowsHitTesting(false)
+        .onAppear { withAnimation(.easeOut(duration:0.38).delay(delay)) { shown=true } }
+    }
+}
+/// The card's edge as the design draws round it: from the bottom's middle along the bottom to the left, up, across and
+/// down (`inset` inside the card, with corners of `radius`); or one side of that up to the top's middle (`side`: -1 the
+/// left, 1 the right), as the light's two strokes run.
+struct CardOutline: Shape {
+    var inset:CGFloat=0
+    var radius:CGFloat=8
+    var side=0
+    /// Amber at the bottom to violet at the top.
+    static let colors:[Gradient.Stop]=[.init(color:Color(red:1,green:184/255,blue:92/255),location:0),.init(color:Color(red:1,green:140/255,blue:70/255),location:0.3),
+                                       .init(color:Color(red:1,green:112/255,blue:104/255),location:0.55),.init(color:Color(red:1,green:92/255,blue:138/255),location:0.8),
+                                       .init(color:Color(red:214/255,green:98/255,blue:230/255),location:1)]
+    func path(in rect:CGRect)->Path {
+        let r=radius,left=rect.minX+inset,top=rect.minY+inset,right=rect.maxX-inset,bottom=rect.maxY-inset,middle=rect.midX
+        var path=Path()
+        path.move(to:CGPoint(x:middle,y:bottom))
+        if side == 1 {
+            path.addLine(to:CGPoint(x:right-r,y:bottom))
+            path.addArc(tangent1End:CGPoint(x:right,y:bottom),tangent2End:CGPoint(x:right,y:bottom-r),radius:r)
+            path.addLine(to:CGPoint(x:right,y:top+r))
+            path.addArc(tangent1End:CGPoint(x:right,y:top),tangent2End:CGPoint(x:right-r,y:top),radius:r)
+            path.addLine(to:CGPoint(x:middle,y:top))
+            return path
+        }
+        path.addLine(to:CGPoint(x:left+r,y:bottom))
+        path.addArc(tangent1End:CGPoint(x:left,y:bottom),tangent2End:CGPoint(x:left,y:bottom-r),radius:r)
+        path.addLine(to:CGPoint(x:left,y:top+r))
+        path.addArc(tangent1End:CGPoint(x:left,y:top),tangent2End:CGPoint(x:left+r,y:top),radius:r)
+        if side == -1 { path.addLine(to:CGPoint(x:middle,y:top));return path }
+        path.addLine(to:CGPoint(x:right-r,y:top))
+        path.addArc(tangent1End:CGPoint(x:right,y:top),tangent2End:CGPoint(x:right,y:top+r),radius:r)
+        path.addLine(to:CGPoint(x:right,y:bottom-r))
+        path.addArc(tangent1End:CGPoint(x:right,y:bottom),tangent2End:CGPoint(x:right-r,y:bottom),radius:r)
+        path.closeSubpath()
+        return path
+    }
+    /// The dashes' period: about ten points, dividing the whole outline exactly.
+    func period(in size:CGSize)->CGFloat {
+        let length=2*(size.width-2*inset-2*radius)+2*(size.height-2*inset-2*radius)+2*CGFloat.pi*radius
+        return length/max(1,(length/10).rounded())
     }
 }
 
-/// "Friends see  Basic  Live  Full  Customize ›": the chosen one bright, with a line under it that glides to
-/// another (white, or the design's moving ribbon of colour under Customize).
+/// Customize picked on Discord's tab, as the design plays it, over the whole tab: seven sparks pop out of its word; a
+/// light leaves the word and curves into the bottom of the card (0.44 s); from there two strokes run round both
+/// sides of the card and meet at the top (half a second) while the outline glows and fades (0.95 s).
+struct LevelFlow: View {
+    let flow:DiscordStudio.LevelFlowStart
+    let studio:DiscordStudio
+    var body:some View {
+        TimelineView(.animation) { context in
+            let time=context.date.timeIntervalSince(flow.at)
+            Canvas { canvas,_ in
+                sparks(canvas,time)
+                if time < 0.44 { light(canvas,time/0.44) } else if time < 1.44 { trace(canvas,time-0.44) }
+            }
+        }
+        .allowsHitTesting(false)
+        .task(id:flow.id) {
+            try? await Task.sleep(for:.seconds(1.5))
+            if studio.levelFlow?.id == flow.id { studio.levelFlow=nil }
+        }
+    }
+    /// The sparks' own chance, the same at every frame: four numbers for each.
+    private var chance:[Double] {
+        var seed=UInt64(truncatingIfNeeded:flow.id.hashValue)
+        return (0..<28).map { _ in seed=seed &* 6364136223846793005 &+ 1442695040888963407;return Double(seed>>11)/Double(1 << 53) }
+    }
+    private func sparks(_ canvas:GraphicsContext,_ time:Double) {
+        let colors=[Color(red:1,green:184/255,blue:92/255),Color(red:236/255,green:106/255,blue:46/255),Color(red:1,green:92/255,blue:138/255),Color(red:214/255,green:98/255,blue:230/255)]
+        let chance=chance,center=CGPoint(x:flow.from.midX,y:flow.from.midY)
+        for index in 0..<7 {
+            let angle=Double(index)/7*2*Double.pi+chance[index*4]*0.6,distance=18+chance[index*4+1]*14,size=3+chance[index*4+2]*2.5
+            let progress=min(1,time/(0.52+chance[index*4+3]*0.16))
+            guard progress < 1 else { continue }
+            let eased=DesignEase.bezier(progress,0.2,0.7,0.3,1),scale=1-0.8*eased,color=colors[index%colors.count]
+            let at=CGPoint(x:center.x+cos(angle)*distance*1.6*eased,y:center.y+sin(angle)*distance*eased)
+            var layer=canvas
+            layer.opacity=1-eased
+            layer.addFilter(.shadow(color:color,radius:3))
+            layer.fill(Path(ellipseIn:CGRect(x:at.x-size*scale/2,y:at.y-size*scale/2,width:size*scale,height:size*scale)),with:.color(color))
+        }
+    }
+    /// The light, from the top of the word to the bottom of the card: quick out sideways, easing in and out upwards.
+    private func light(_ canvas:GraphicsContext,_ progress:Double) {
+        let card=studio.cardFrame,start=CGPoint(x:flow.from.midX,y:flow.from.minY),end=CGPoint(x:card.midX,y:card.maxY)
+        let across=1-pow(1-progress,2.4),up=progress < 0.5 ? 4*pow(progress,3) : 1-pow(-2*progress+2,3)/2
+        let at=CGPoint(x:start.x+(end.x-start.x)*across,y:start.y+(end.y-start.y)*up),size=8*(1-0.25*progress)
+        var layer=canvas
+        layer.addFilter(.shadow(color:Color(red:236/255,green:106/255,blue:46/255),radius:7))
+        layer.addFilter(.shadow(color:Color(red:1,green:184/255,blue:92/255),radius:2.5))
+        layer.fill(Path(ellipseIn:CGRect(x:at.x-size/2,y:at.y-size/2,width:size,height:size)),with:.color(Color(red:1,green:226/255,blue:190/255)))
+    }
+    private func trace(_ canvas:GraphicsContext,_ time:Double) {
+        let card=studio.cardFrame
+        guard card.width > 0 else { return }
+        let drawn=DesignEase.bezier(min(1,time/0.5),0.4,0,0.2,1),fading=DesignEase.bezier(min(1,time/0.95),0.42,0,1,1)
+        var layer=canvas
+        layer.opacity=fading < 0.5 ? 1 : 2*(1-fading)
+        layer.addFilter(.shadow(color:Color(red:1,green:150/255,blue:90/255).opacity(0.9),radius:2))
+        layer.addFilter(.shadow(color:Color(red:1,green:92/255,blue:138/255).opacity(0.5),radius:6))
+        let shading=GraphicsContext.Shading.linearGradient(Gradient(stops:CardOutline.colors),startPoint:CGPoint(x:card.midX,y:card.maxY),endPoint:CGPoint(x:card.midX,y:card.minY))
+        for side in [-1,1] {
+            layer.stroke(CardOutline(radius:8,side:side).path(in:card).trimmedPath(from:0,to:drawn),with:shading,style:StrokeStyle(lineWidth:2,lineCap:.round))
+        }
+    }
+}
+
+/// "Friends see  Basic  Live  Full  Customize ›": the chosen one bright, with a line under it, white (or the design's
+/// moving ribbon of colour under Customize), that glides to another as the design's does: the leading edge runs
+/// ahead, stretching the line, and the rest catches up with a spring. The word picked springs; Customize, picked,
+/// sends sparks and a light into the card (LevelFlow), and picked again opens the card in Customize.
 struct LevelWords: View {
     @Bindable var studio:DiscordStudio
-    @Namespace private var line
     @State private var inside:DiscordPresenceLevel?
+    /// Where each word's text is, in the row (for the line) and on the tab (for the light).
+    @State private var words:[DiscordPresenceLevel:CGRect]=[:]
+    @State private var customOnTab=CGRect.zero
+    /// Where the line glides from, and a count of glides and of each word's springs, which start them.
+    @State private var glideFrom:CGRect?
+    @State private var glides=0
+    @State private var springs:[DiscordPresenceLevel:Int]=[:]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body:some View {
         HStack(spacing:14) {
-            Text(L("Friends see")).font(LauncherStyle.font(13)).foregroundStyle(DiscordColors.ink(0.42))
+            Text(L("Friends see")).designFont(13).foregroundStyle(DiscordColors.ink(0.42))
             HStack(spacing:18) {
-                ForEach(DiscordPresenceLevel.allCases) { level in
-                    let on=studio.level == level,custom=level == .custom
-                    Button {
-                        withAnimation(reduceMotion ? nil : .timingCurve(0.22,1,0.36,1,duration:0.45)) { studio.choose(level) }
-                    } label: {
-                        HStack(spacing:5) {
-                            Group {
-                                if custom { RibbonText(text:level.title,weight:on ? .bold : .semibold) }
-                                else { Text(level.title).font(LauncherStyle.font(14,on ? .bold : .regular)).foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.55)) }
-                            }
-                            if custom && on { DesignIcon("lucide:chevron-right",size:14).foregroundStyle(Color(red:1,green:150/255,blue:120/255).opacity(0.8)).padding(.leading,-2).transition(.scale.combined(with:.opacity)) }
-                        }
-                        .frame(height:34)
-                        .overlay(alignment:.bottom) {
-                            if on {
-                                Group { if custom { RibbonLine() } else { Capsule().fill(DiscordColors.ink(1)) } }
-                                    .frame(height:3).clipShape(Capsule())
-                                    .shadow(color:custom ? Color(red:1,green:140/255,blue:80/255).opacity(0.38) : DiscordColors.ink(0.16),radius:5)
-                                    .padding(.bottom,1).padding(.trailing,custom ? 19 : 0)
-                                    .matchedGeometryEffect(id:"underline",in:line)
-                            }
-                        }
-                        .brightness(inside == level ? 0.15 : 0)
-                        .contentShape(Rectangle())
+                ForEach(DiscordPresenceLevel.allCases) { level in word(level) }
+            }
+            .background(alignment:.topLeading) { line }
+            .coordinateSpace(.named(Self.row))
+        }.frame(height:34).padding(.leading,2)
+    }
+    private static let row="levelWords"
+    private func word(_ level:DiscordPresenceLevel)->some View {
+        let on=studio.level == level,custom=level == .custom
+        return Button { pick(level) } label: {
+            HStack(spacing:5) {
+                Group {
+                    if custom { RibbonText(text:level.title,weight:on ? 700 : 650) }
+                    else {
+                        // Its colour changes over 0.35 s, its weight at once, as the design's do.
+                        Text(level.title).designFont(14,on ? .bold : .medium)
+                            .animation(.cssEase(0.35)) { $0.foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.55)) }
                     }
-                    .buttonStyle(.plain).onHover { inside=$0 ? level : nil }
-                    .accessibilityLabel(custom && on ? L("Edit your card") : level.title).accessibilityAddTraits(on ? .isSelected : [])
+                }
+                .onGeometryChange(for:CGRect.self) { $0.frame(in:.named(Self.row)) } action:{ words[level]=$0 }
+                .onGeometryChange(for:CGRect.self) { $0.frame(in:.discordTab) } action:{ if custom { customOnTab=$0 } }
+                .keyframeAnimator(initialValue:1.0,trigger:springs[level] ?? 0) { word,progress in
+                    word.scaleEffect(1.14-0.14*DesignEase.outElastic(progress))
+                } keyframes:{ _ in
+                    MoveKeyframe(0.0)
+                    LinearKeyframe(1.0,duration:0.52)
+                }
+                if custom && on {
+                    DesignIcon("lucide:chevron-right",size:14).foregroundStyle(Color(red:1,green:150/255,blue:120/255).opacity(0.8)).padding(.leading,-2)
+                        .transition(.asymmetric(insertion:.opacity.combined(with:.offset(y:8)).animation(.timingCurve(0.25,0.1,0.25,1,duration:0.35)),removal:.identity))
                 }
             }
-        }.frame(height:34).padding(.leading,2)
+            .frame(height:34)
+            .brightness(inside == level ? 0.15 : 0)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).onHover { inside=$0 ? level : nil }
+        .accessibilityLabel(custom && on ? L("Edit your card") : level.title).accessibilityAddTraits(on ? .isSelected : [])
+    }
+    private func pick(_ level:DiscordPresenceLevel) {
+        if studio.level != level && !reduceMotion {
+            glideFrom=words[studio.level];glides+=1
+            if level == .custom { studio.levelFlow=DiscordStudio.LevelFlowStart(from:customOnTab,at:Date()) } else { springs[level,default:0]+=1 }
+        }
+        // Customize again opens the editor, with the screen's own move.
+        if studio.level == level && level == .custom { withAnimation(.timingCurve(0.22,1,0.36,1,duration:0.52)) { studio.choose(level) } } else { studio.choose(level) }
+    }
+    /// The line under the chosen word: three points high, a point above the row's bottom.
+    private var line:some View {
+        let to=words[studio.level] ?? .zero,custom=studio.level == .custom
+        return Underline(custom:custom)
+            .keyframeAnimator(initialValue:1.0,trigger:glides) { bar,progress in
+                let from=glideFrom ?? to,at=GlideStyle.words.span(from:(from.minX,from.width),to:(to.minX,to.width),at:progress)
+                bar.frame(width:max(0,at.length),height:3).scaleEffect(y:at.squash).offset(x:at.start,y:30)
+            } keyframes:{ _ in
+                MoveKeyframe(0.0)
+                LinearKeyframe(1.0,duration:GlideStyle.words.duration)
+            }
+            .opacity(to == .zero ? 0 : 1)
+    }
+}
+/// The level's line: white, or under Customize the ribbon with an orange glow, changing over 0.45 s.
+private struct Underline: View {
+    let custom:Bool
+    var body:some View {
+        let glow=custom ? Color(red:1,green:140/255,blue:80/255).opacity(0.38) : DiscordColors.ink(0.16)
+        ZStack {
+            DiscordColors.ink(1).opacity(custom ? 0 : 1)
+            RibbonLine(rounded:false).opacity(custom ? 1 : 0)
+        }
+        .clipShape(RoundedRectangle(cornerRadius:2))
+        .shadow(color:glow,radius:5).shadow(color:glow,radius:1.5)
+        .animation(.timingCurve(0.25,0.1,0.25,1,duration:0.45),value:custom)
     }
 }
 /// Customize's word: the design's ribbon of colour moving through the letters.
 private struct RibbonText: View {
     let text:String
-    let weight:Font.Weight
+    let weight:Int
     var body:some View {
-        Text(text).font(LauncherStyle.font(14,weight)).foregroundStyle(.clear)
-            .overlay { RibbonLine().mask { Text(text).font(LauncherStyle.font(14,weight)) } }
+        Text(text).designFont(14,weight).foregroundStyle(.clear)
+            .overlay { RibbonLine(rounded:false).mask { Text(text).designFont(14,weight) } }
     }
 }
 
@@ -250,20 +420,20 @@ struct DiscordRows: View {
                 RowButton(height:44) { studio.openProfile() } label: {
                     DesignIcon("simple-icons:battledotnet",size:15).foregroundStyle(DiscordColors.ink(0.55))
                     if studio.battleTag.isEmpty {
-                        Text(L("Add your BattleTag")).font(LauncherStyle.font(13,.semibold)).foregroundStyle(DiscordColors.bright).fixedSize()
-                        Text(L("for ranks and records")).font(LauncherStyle.font(11.5)).normalLines(size:11.5).foregroundStyle(DiscordColors.ink(0.5)).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading)
+                        Text(L("Add your BattleTag")).designFont(13,.semibold).foregroundStyle(DiscordColors.body).fixedSize()
+                        Text(L("for ranks and records")).designFont(11.5).foregroundStyle(DiscordColors.ink(0.5)).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading)
                     } else {
-                        Text(verbatim:studio.battleTag).font(LauncherStyle.font(13,.semibold)).foregroundStyle(DiscordColors.bright).fixedSize()
+                        Text(verbatim:studio.battleTag).designFont(13,.semibold).foregroundStyle(DiscordColors.body).fixedSize()
                         if let chip=studio.tagChip {
                             HStack(spacing:5) {
                                 if let icon=chip.icon { RemoteImage(url:icon,fill:false) { Color.clear }.frame(width:16,height:16) } else { DesignIcon("lucide:lock",size:12) }
-                                Text(chip.text)
+                                Text(chip.text).designFont(11.5,.semibold)
                             }
-                            .font(LauncherStyle.font(11.5,.semibold)).foregroundStyle(DiscordColors.ink(0.85))
+                            .foregroundStyle(DiscordColors.ink(0.85))
                             .padding(.leading,chip.icon == nil ? 7 : 5).padding(.trailing,9).frame(height:24)
-                            .background(DiscordColors.veil(0.06),in:RoundedRectangle(cornerRadius:7,style:.continuous)).fixedSize()
+                            .background(DiscordColors.veil(0.06),in:RoundedRectangle(cornerRadius:7)).fixedSize()
                         }
-                        Text(studio.tagNote).font(LauncherStyle.font(11.5)).normalLines(size:11.5).foregroundStyle(DiscordColors.ink(0.5)).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading)
+                        Text(studio.tagNote).designFont(11.5).foregroundStyle(DiscordColors.ink(0.5)).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading)
                     }
                     DesignIcon("lucide:chevron-right",size:14).foregroundStyle(DiscordColors.ink(0.4))
                 }
@@ -271,16 +441,16 @@ struct DiscordRows: View {
             }
             RowButton(height:40) { studio.openHistory() } label: {
                 DesignIcon("lucide:database",size:14).foregroundStyle(DiscordColors.ink(0.55))
-                Text(L("What Recall remembers")).font(LauncherStyle.font(12.5,.medium)).foregroundStyle(DiscordColors.bright).frame(maxWidth:.infinity,alignment:.leading)
-                Text(studio.historyNote).font(LauncherStyle.font(11.5)).normalLines(size:11.5).foregroundStyle(DiscordColors.ink(0.45)).lineLimit(1)
+                Text(L("What Recall remembers")).designFont(12.5,.medium).foregroundStyle(DiscordColors.body).frame(maxWidth:.infinity,alignment:.leading)
+                Text(studio.historyNote).designFont(11.5).foregroundStyle(DiscordColors.ink(0.45)).lineLimit(1)
                 DesignIcon("lucide:chevron-right",size:14).foregroundStyle(DiscordColors.ink(0.4))
             }
         }
         // Inside its one-point border, as the design's box is.
         .padding(1)
-        .background(DiscordColors.veil(0.04),in:RoundedRectangle(cornerRadius:13,style:.continuous))
-        .clipShape(RoundedRectangle(cornerRadius:13,style:.continuous))
-        .overlay { RoundedRectangle(cornerRadius:13,style:.continuous).strokeBorder(DiscordColors.veil(0.06),lineWidth:1) }
+        .background(DiscordColors.veil(0.04),in:RoundedRectangle(cornerRadius:13))
+        .clipShape(RoundedRectangle(cornerRadius:13))
+        .overlay { RoundedRectangle(cornerRadius:13).strokeBorder(DiscordColors.veil(0.06),lineWidth:1) }
     }
 }
 /// A column whose rows give up height in proportion to their own when the room is short of them all, as the

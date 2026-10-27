@@ -92,13 +92,22 @@ import Observation
     var unlocked=Set(UserDefaults.standard.stringArray(forKey:"discordUnlocked") ?? []) { didSet { UserDefaults.standard.set(Array(unlocked).sorted(),forKey:"discordUnlocked") } }
     /// The design's tooltips for these pages.
     @ObservationIgnored let tips=DesignTips()
-    /// When Customize opened: the preview's game opened 42 minutes before it, so its timer reads like a session.
+    /// When Settings opened: the preview's game opened 42:18 before it and its match 3:12 before it, so its timers
+    /// read like a session's and run on, as the design's do.
     @ObservationIgnored private var opened=Date()
+    var previewMatchStart:Date { opened.addingTimeInterval(-192) }
+    func settingsOpened() { opened=Date() }
     @ObservationIgnored private var toastEnds:Task<Void,Never>?
     @ObservationIgnored private var pointing:Task<Void,Never>?
     @ObservationIgnored var eraseTimer:Task<Void,Never>?
     /// When the gallery's card started playing.
     private var galleryStart=Date()
+    /// Customize just picked on Discord's tab: where its word is, for the sparks and the light that runs from it into
+    /// the card (LevelFlow), and when.
+    struct LevelFlowStart: Equatable { let id=UUID();let from:CGRect;let at:Date }
+    var levelFlow:LevelFlowStart?
+    /// Where the card is on Discord's tab, for the light to land on.
+    @ObservationIgnored var cardFrame=CGRect.zero
 
     init(shelf:DiscordCardShelf=DiscordCardShelf()) {
         self.shelf=shelf
@@ -117,14 +126,14 @@ import Observation
     }
     @ObservationIgnored var actions=Actions()
     func setPower(_ on:Bool) { power=on;actions.power(on) }
-    /// A level from the line under the card; Customize opens the editor on the card in use.
+    /// A level from the line under the card. Customize picked shows the card in use; picked again, it opens it in the
+    /// editor.
     func choose(_ level:DiscordPresenceLevel) {
         if !power { setPower(true) }
-        if self.level != level { self.level=level;actions.level(level) }
-        if level == .custom { openEditor() }
+        if self.level != level { self.level=level;actions.level(level) } else if level == .custom { openEditor() }
     }
     func openEditor() {
-        screen = .editor;gallery=false;galleryIndex=nil;preview=nil;held=nil;openLine=nil;shift=0;opened=Date()
+        screen = .editor;gallery=false;galleryIndex=nil;preview=nil;held=nil;openLine=nil;shift=0
         if level != .custom { level = .custom;actions.level(.custom) }
     }
     func closePage() {
@@ -151,12 +160,12 @@ import Observation
     }
     var usesExample:Bool { example && profileState != .shown }
     func inputs(at now:Date)->CardInputs {
-        var inputs=CardInputs(launched:opened.addingTimeInterval(-42*60),now:now,texts:texts)
+        var inputs=CardInputs(launched:opened.addingTimeInterval(-2538),now:now,texts:texts)
         if let live {
             inputs.place=live.place;inputs.voice=live.voice;inputs.matches=live.matches;inputs.launched=live.launched
         } else {
             let match=scene == .match || scene == .matchVoice
-            inputs.place=match ? .match(since:now.addingTimeInterval(-225)) : .menu
+            inputs.place=match ? .match(since:previewMatchStart) : .menu
             if scene == .menusVoice || scene == .matchVoice { inputs.voice=GroupVoice(count:3,channel:"preview",party:"preview") }
             inputs.matches=match ? 4 : 3
         }
@@ -191,9 +200,9 @@ import Observation
         inputs.history.runs.removeAll { $0.start > change.at }
         return inputs
     }
-    /// The card at a moment, as Discord would get it; Basic and Live as they are, off as nothing.
-    func activity(at now:Date)->[String:Any]? {
-        guard power else { return nil }
+    /// The card at a moment, as Discord would get it; Basic and Live as they are. Off, the one it would get: Recall sends
+    /// nothing, and the stage's cover goes over it.
+    func activity(at now:Date)->[String:Any] {
         let inputs=inputs(at:now)
         switch screen == .home ? level : .custom {
         case .normal,.live:
@@ -489,9 +498,10 @@ import Observation
     func imageChoices(_ i:CardInputs)->[(picture:CardPicture,name:String)] {
         switch imageTab {
         case .suggested:
+            // The role mains, then the most played, without the last hero: Last hero already shows them.
             let mains=[CareerRank.Role.tank,.damage,.support].compactMap { role in i.topHeroes.first { i.profile?.heroes[$0]?.role == role } }
             var heroes:[String]=[]
-            for key in mains+i.topHeroes.prefix(6) where !heroes.contains(key) { heroes.append(key) }
+            for key in mains+i.topHeroes.prefix(6) where !heroes.contains(key) && key != i.profile?.last?.hero { heroes.append(key) }
             let fixed:[(picture:CardPicture,name:String)]=[(.playerIcon,L("Player icon")),(.overwatch,L("Overwatch")),(.lastHero,L("Last hero: follows who you played last"))]
             return fixed+heroes.map { key in
                     var name=heroCaption(key,i)
