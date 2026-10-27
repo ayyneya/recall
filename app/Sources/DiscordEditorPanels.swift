@@ -159,7 +159,7 @@ private struct TopicTile: View {
                 if count > 0 {
                     Text("\(count)").designFont(9.5,.heavy).foregroundStyle(Color(red:28/255,green:28/255,blue:32/255))
                         .padding(.horizontal,4).frame(minWidth:15,minHeight:15).background(DiscordColors.accent,in:Capsule()).padding(5)
-                        .transition(.scale.combined(with:.opacity))
+                        .popIn(0.3).transition(.identity)
                 }
             }
             .brightness(inside ? 0.08 : 0)
@@ -169,18 +169,21 @@ private struct TopicTile: View {
         .animation(.easeOut(duration:0.2),value:on)
     }
 }
-/// A dot that sends out a ring now and then: something happens.
+/// A dot that sends out a ring now and then: something happens. As the design's dcPing, the ring spreads over three
+/// quarters of 2.2 seconds and the rest is still.
 struct Ping: View {
     let color:Color
     var size:CGFloat=7
-    @State private var out=false
     var body:some View {
         ZStack {
-            Circle().fill(color).scaleEffect(out ? 2.5 : 1).opacity(out ? 0 : 0.75)
+            Circle().fill(color)
+                .keyframeAnimator(initialValue:0.0,repeating:true) { ring,out in ring.scaleEffect(1+1.5*out).opacity(0.75*(1-out)) } keyframes:{ _ in
+                    LinearKeyframe(1.0,duration:1.65,timingCurve:.bezier(startControlPoint:UnitPoint(x:0,y:0),endControlPoint:UnitPoint(x:0.2,y:1)))
+                    LinearKeyframe(1.0,duration:0.55)
+                }
             Circle().fill(color)
         }
         .frame(width:size,height:size)
-        .onAppear { withAnimation(.timingCurve(0,0,0.2,1,duration:1.65).repeatForever(autoreverses:false).delay(0.1)) { out=true } }
     }
 }
 
@@ -259,7 +262,8 @@ struct HighlightsLadder: View {
                             HStack(spacing:5) { Circle().fill(DiscordColors.accent).frame(width:5,height:5);Text(L("Now")).designFont(10.5,.bold) }
                                 .foregroundStyle(Color(red:1,green:170/255,blue:120/255))
                                 .padding(.horizontal,8).frame(height:20).background(DiscordColors.accent.opacity(0.16),in:RoundedRectangle(cornerRadius:6))
-                                .transition(.scale.combined(with:.opacity))
+                                // Once the line has run down to it.
+                                .popIn(0.4,delay:0.8).transition(.identity)
                         }
                     }
                     .padding(.leading,6).padding(.trailing,10).frame(height:44)
@@ -402,19 +406,20 @@ private struct CatalogRowText: View {
         }
     }
 }
-/// How far an earned line is: a bar, and what it still takes (or that the key is ready).
+/// How far an earned line is: a bar, growing to it as it shows, and what it still takes (or that the key is ready).
 private struct EarnBar: View {
     let done:Double
     let ready:Bool
     let needed:String?
+    @State private var grown=false
     var body:some View {
         VStack(alignment:.leading,spacing:4) {
             GeometryReader { box in
                 ZStack(alignment:.leading) {
                     Capsule().fill(DiscordColors.veil(0.08))
-                    Capsule().fill(fill).frame(width:box.size.width*min(1,done))
+                    Capsule().fill(fill).frame(width:grown ? box.size.width*min(1,done) : 0)
                 }
-            }.frame(height:4)
+            }.frame(height:4).onAppear { withAnimation(.timingCurve(0.22,1,0.36,1,duration:1.1).delay(0.15)) { grown=true } }
             Text(ready ? L("You’ve earned it. Click the key to unlock it.") : needed ?? "").designFont(10.5).lineLimit(1)
                 .foregroundStyle(ready ? Color(red:1,green:176/255,blue:128/255) : DiscordColors.ink(0.5))
         }
@@ -463,7 +468,7 @@ struct PicturePanel: View {
             RuleHeading(text:L("Add an image"))
             ImageTabs(studio:studio)
             FlowLayout(spacing:7,lineSpacing:7) {
-                ForEach(studio.imageChoices(sample),id:\.picture) { choice in
+                ForEach(Array(studio.imageChoices(sample).enumerated()),id:\.element.picture) { index,choice in
                     let place=design.pictures?.firstIndex(of:choice.picture),mine=design.pictures?.count ?? 0
                     PictureTile(picture:choice.picture,inputs:sample,rank:design.rank,number:place.map { $0+1 },rolls:true)
                         .clickOrHold(place != nil && own ? (mine > 1 ? .remove : nil) : (mine < 6 || !own ? .add : nil),radius:10,
@@ -474,6 +479,8 @@ struct PicturePanel: View {
                             if inside { studio.point { $0.pictures=[choice.picture] } } else { studio.stopPointing() }
                         }
                         .accessibilityLabel(choice.name)
+                        // One after another as they show, 22 ms apart (the first dozen).
+                        .popIn(0.35,delay:Double(min(index,12))*0.022)
                 }
                 if studio.imageTab == .heroes && studio.heroesOfRole(sample).count > 10 {
                     Button(studio.allHeroes ? L("Fewer heroes") : L("Show more heroes")) { withAnimation(.snappy) { studio.allHeroes.toggle() } }
@@ -534,17 +541,20 @@ private struct ModeTab: View {
         }.buttonStyle(.plain).accessibilityAddTraits(on ? .isSelected : [])
     }
     @ViewBuilder private var badge:some View {
+        // Each pops in as the tab changes, the pictures one after another.
         if on {
             DesignIcon(icon,size:16).foregroundStyle(DiscordColors.accent)
                 .frame(width:30,height:30).background(DiscordColors.accent.opacity(0.16),in:RoundedRectangle(cornerRadius:9)).offset(x:3)
+                .popIn(0.35).transition(.identity)
         } else {
             ZStack(alignment:.topLeading) {
                 ForEach(Array(pictures.enumerated()),id:\.offset) { index,picture in
                     PictureTile(picture:picture,inputs:sample,rank:rank,size:20,radius:5)
                         .overlay { RoundedRectangle(cornerRadius:5).strokeBorder(Color(red:36/255,green:37/255,blue:41/255),lineWidth:1.5).padding(-1.5) }
                         .offset(x:CGFloat(index)*8,y:CGFloat(index)*5)
+                        .popIn(0.35,delay:Double(index)*0.05)
                 }
-            }
+            }.transition(.identity)
         }
     }
 }
@@ -695,7 +705,7 @@ struct PictureTile: View {
                 Text("\(number)").designFont(10,.heavy).foregroundStyle(Color(red:28/255,green:28/255,blue:32/255))
                     .padding(.horizontal,4).frame(minWidth:16,minHeight:16).background(DiscordColors.accent,in:Capsule())
                     .overlay { Capsule().strokeBorder(DiscordColors.stage,lineWidth:2).padding(-2) }.offset(x:4,y:-4)
-                    .transition(.scale.combined(with:.opacity))
+                    .popIn(0.3).transition(.identity)
             }
         }
         .offset(y:lift && size >= 38 ? -2 : 0)
