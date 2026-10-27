@@ -483,7 +483,9 @@ writes them to Downloads as a spreadsheet (`CareerHistory.csv`). The preview fol
 connects (kept in `discordAvatar`), with the design's status lines beside "You" and its easter eggs
 (`DiscordProfile.swift`): pointing at the picture bulges it, each click pumps it up until the sixth bursts it
 into pieces that bounce inside the pop-out before it grows back, and pointing at the status line makes its
-letters jump; Customize or a page puts the picture back at once. The design's own look (`DiscordDesign.swift`): its colours, its icons drawn
+letters jump; Customize or a page puts the picture back at once. `tests/DiscordMotionTests.swift` checks the
+design's easings against anime.js's own numbers, how one animation takes over from another, the glides, and the
+picture's pumps, settling, cracks and burst. The design's own look (`DiscordDesign.swift`): its colours, its icons drawn
 from their SVG (Lucide, Phosphor, Material Design Icons, Google's Material Icons, Simple Icons;
 licenses/DESIGN-ICONS-NOTICE.txt), Noto Sans for Discord's text (bundled, SIL Open Font License), and the
 browser's line heights, since SwiftUI rounds a line of the system font a point taller at some sizes.
