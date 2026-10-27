@@ -616,7 +616,7 @@ private struct FollowedPictureRows: View {
         ForEach(lines,id:\.offset) { index,line in
             let picture=line.piece.picture(sample,rank:design.rank)
             let live=shown.count > 1 && shown[turn%shown.count] == line.piece
-            ListRow(number:index+1,text:picture.shownName(sample,rank:design.rank),sub:L("Follows “{0}”",line.piece.label),live:live,turnDone:done) {
+            ListRow(number:index+1,text:picture.shownName(sample,rank:design.rank),sub:L("With “{0}” on Line 2",line.piece.label),live:live,turnDone:done) {
                 PictureTile(picture:picture,inputs:sample,rank:design.rank,size:24,radius:8)
             }
         }

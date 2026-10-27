@@ -38,10 +38,10 @@ enum DiscordPresenceLevel: String, CaseIterable, Identifiable {
     /// Settings › Discord's line under the choice.
     var detail:String {
         switch self {
-        case .normal: return L("Overwatch and how long you’ve played, as on a PC.")
-        case .live: return L("Adds menus or match, a match timer and the Mac badge.")
-        case .full: return L("Adds your rank and how your last session went.")
-        case .custom: return L("Your own card, part by part.")
+        case .normal: return L("Playing Overwatch, and for how long.")
+        case .live: return L("Plus menus or match, a match timer and the Mac badge.")
+        case .full: return L("Plus your rank and how your last session went.")
+        case .custom: return L("Pick what your card shows, part by part.")
         }
     }
 }

@@ -377,7 +377,7 @@ struct LevelFlow: View {
     }
 }
 
-/// "Friends see  Basic  Live  Full  Customize ›": the chosen one bright, with a line under it, white (or the design's
+/// An eye (what others see), then "Basic  Live  Full  Customize ›": the chosen one bright, with a line under it, white (or the design's
 /// moving ribbon of colour under Customize), that glides to another as the design's does: the leading edge runs
 /// ahead, stretching the line, and the rest catches up with a spring. The word picked springs; Customize, picked,
 /// sends sparks and a light into the card (LevelFlow), and picked again opens the card in Customize.
@@ -394,7 +394,7 @@ struct LevelWords: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body:some View {
         HStack(spacing:14) {
-            Text(L("Friends see")).designFont(13).foregroundStyle(DiscordColors.ink(0.42))
+            DesignIcon("lucide:eye",size:16).foregroundStyle(DiscordColors.ink(0.42)).accessibilityHidden(true)
             HStack(spacing:18) {
                 ForEach(DiscordPresenceLevel.allCases) { level in word(level) }
             }
