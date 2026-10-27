@@ -285,14 +285,15 @@ struct DiscordCardView: View {
     }
     /// In Customize, what the clock changes glows for a moment.
     private var glows:Bool { arrival == .clock && selected != nil }
-    /// How a line arrives: brought by a level, sliding in from the left with a spring (Line 2 a moment after Line 1, when
-    /// both are new); by the clock, Line 2 rising; otherwise brightening.
+    /// How a line arrives: brought by a level, fading in where it is (Line 2 a moment after Line 1, when both are new;
+    /// the design's slide from the left with a spring read as a shake, its words soft while they moved); by the clock,
+    /// Line 2 rising; otherwise brightening.
     private func lineArrival(second:Bool)->(start:ArrivalStart,animation:Animation)? {
         guard appeared else { return nil }
         switch arrival {
         case .level:
             let after=second && details != nil && details != shownDetails
-            return (ArrivalStart(x:-12,opacity:0.001),.design(.outBack(1.8),0.62).delay(after ? 0.07 : 0))
+            return (ArrivalStart(opacity:0.001),.design(.outCubic,0.4).delay(after ? 0.07 : 0))
         case .clock where second: return (ArrivalStart(y:4,opacity:0),.design(.outCubic,0.3))
         default: return (ArrivalStart(opacity:0.4),.design(.outQuad,0.24))
         }
@@ -304,10 +305,11 @@ struct DiscordCardView: View {
         if shownLevel == .normal { return Self.badgeSprung ? nil : (ArrivalStart(scale:0.3),.design(.outElastic(1,0.5),0.85)) }
         return level != .normal && assets["small_image"] != shownBadge ? (ArrivalStart(opacity:0.35),.design(.outQuad,0.26)) : nil
     }
-    /// The buttons, brought by a level, rise into place a moment after the lines; otherwise they fade in.
+    /// The buttons, brought by a level, fade in a moment after the lines (where they are, as the lines do); otherwise
+    /// they fade in at once.
     private var buttonsArrival:(start:ArrivalStart,animation:Animation)? {
         guard appeared else { return nil }
-        return arrival == .level ? (ArrivalStart(y:12,opacity:0.001),.design(.outBack(1.6),0.64).delay(0.15)) : (ArrivalStart(opacity:0),.cssEase(0.35))
+        return arrival == .level ? (ArrivalStart(opacity:0.001),.design(.outCubic,0.4).delay(0.15)) : (ArrivalStart(opacity:0),.cssEase(0.35))
     }
     private var desktopCard:some View {
         VStack(alignment:.leading,spacing:8) {
