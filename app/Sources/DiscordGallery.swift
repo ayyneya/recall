@@ -8,6 +8,10 @@ import AppKit
 
 struct DiscordGallery: View {
     @Bindable var studio:DiscordStudio
+    /// The design's carousel: each step slides the cards along over 0.62 s.
+    static let slide=Animation.timingCurve(0.22,1,0.36,1,duration:0.62)
+    /// The card in the middle's place: over the caption (and the stage's border, a point at the bottom).
+    static let caption:CGFloat=268+1
     var body:some View {
         // Inside the stage's one-point border, as the design's are.
         VStack(spacing:0) {
@@ -22,7 +26,7 @@ struct DiscordGallery: View {
     }
 }
 
-/// The card in the middle, its neighbours at the sides, and the arrows.
+/// The neighbours at the sides of the card in the middle (CardStage's own card, shrunk into its place), and the arrows.
 private struct GalleryCards: View {
     @Bindable var studio:DiscordStudio
     var body:some View {
@@ -31,25 +35,6 @@ private struct GalleryCards: View {
             ZStack {
                 if place > 0 { neighbour(items[place-1],now:context.date,leading:true) }
                 if place < items.count-1 { neighbour(items[place+1],now:context.date,leading:false) }
-                let activity=studio.activity(at:context.date)
-                DiscordShell(profile:false) {
-                    DiscordCardView(activity:activity,now:context.date,pins:studio.galleryPins,turn:studio.turn(at:context.date))
-                        .overlay(alignment:.top) {
-                            HStack(spacing:5) {
-                                TurnDots(studio:studio,now:context.date)
-                                if studio.loopLength(at:context.date) > 1 {
-                                    HStack(spacing:3) { DesignIcon("rc:ff",size:9);Text(L("Sped up")).designFont(10,.bold) }
-                                        .foregroundStyle(Color(red:1,green:190/255,blue:140/255).opacity(0.9)).fixedSize()
-                                }
-                            }.offset(y:10)
-                        }
-                }
-                .scaleEffect(0.86)
-                // A step: it comes in from where its neighbour was, at 0.6 (the old one goes at once: its neighbour
-                // takes its place, below).
-                .modifier(PartArrival(trigger:nil,studio.gallerySlide.flatMap { $0.moving ? (ArrivalStart(x:$0.way*277,opacity:0.9,scale:0.6/0.86),Self.slide) : nil }))
-                .id(studio.galleryItem?.design.id)
-                .transition(.identity)
                 HStack {
                     arrow("lucide:chevron-left",name:L("Previous card"),enabled:place > 0) { studio.galleryStep(-1) }
                     Spacer()
@@ -62,8 +47,6 @@ private struct GalleryCards: View {
             .frame(maxWidth:.infinity,maxHeight:.infinity)
         }
     }
-    /// The design's carousel: each step slides the cards along over 0.62 s.
-    static let slide=Animation.timingCurve(0.22,1,0.36,1,duration:0.62)
     /// A neighbour, smaller and to the side: a click shows it.
     private func neighbour(_ item:DiscordStudio.GalleryItem,now:Date,leading:Bool)->some View {
         let activity=studio.galleryActivity(item,at:now)
@@ -87,8 +70,8 @@ private struct GalleryCards: View {
         guard let slide=studio.gallerySlide,slide.moving else { return (ArrivalStart(opacity:0),Animation.cssEase(0.5).delay(0.1)) }
         let way=slide.way
         let anchor:UnitPoint=leading ? .trailing : .leading
-        if (way > 0) == leading { return (ArrivalStart(x:way*326,scale:1.066/0.74,anchor:anchor),Self.slide) }
-        return (ArrivalStart(x:way*150,opacity:0,scale:0.6/0.74,anchor:anchor),Self.slide)
+        if (way > 0) == leading { return (ArrivalStart(x:way*326,scale:1.066/0.74,anchor:anchor),DiscordGallery.slide) }
+        return (ArrivalStart(x:way*150,opacity:0,scale:0.6/0.74,anchor:anchor),DiscordGallery.slide)
     }
     private func arrow(_ icon:String,name:String,enabled:Bool,_ action:@escaping ()->Void)->some View {
         Button(action:action) {

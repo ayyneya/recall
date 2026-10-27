@@ -14,8 +14,9 @@ struct DiscordEditor: View {
                     PanelScroller { EditorPanel(studio:studio).padding(.horizontal,2).padding(.bottom,12) }
                 }
                 .padding(.top,12).frame(maxHeight:.infinity,alignment:.top)
-                // Back from My cards, under the stage as it shrinks back.
-                .popIn(0.42).transition(.asymmetric(insertion:.ride(CardStage.height(.editor,gallery:true)-CardStage.height(.editor,gallery:false)),removal:.identity))
+                // Back from My cards, under the stage as it shrinks back. Going to it, they stay while the stage grows over
+                // them, pushed down and out of sight, as the design's are (a half point's ride keeps them for the move).
+                .popIn(0.42).transition(.asymmetric(insertion:.ride(CardStage.height(.editor,gallery:true)-CardStage.height(.editor,gallery:false)),removal:.ride(0.5)))
             }
         }
         // Its room and no more, while the stage still shrinks over it (AnyTransition.ride): the rail, which can't shrink,
@@ -101,37 +102,11 @@ struct CardStage: View {
     var body:some View {
         let home=studio.screen == .home
         DiscordStage(studio:studio,height:Self.height(studio.screen,gallery:studio.gallery),top:home ? 0 : 34,power:home) {
-            if studio.gallery {
-                DiscordGallery(studio:studio)
-            } else {
-                // Off, the card stays under the stage's cover, as the design shows it.
-                TimelineView(.seconds) { context in
-                    let now=home ? studio.homeTime(context.date) : context.date
-                    let activity=studio.activity(at:now)
-                    // From now, not the timeline's tick (up to a second before it).
-                    let outlineDelay:Double=studio.levelFlow.map { flow in max(0,0.88-Date().timeIntervalSince(flow.at)) } ?? 0
-                    if home || studio.device == .desktop {
-                        // Where the layout puts it, which it has from the moment a fold starts: what the morph needs.
-                        DiscordShell(profile:home,fun:studio.profileFun,place:{ studio.foldFrames[home ? .shellHome : .shellEditor]=$0 }) {
-                            DiscordCardView(activity:activity,now:now,selected:home ? nil : studio.slot,outlineWait:studio.fold?.opening == true ? 0.1 : 0,
-                                            pick:home ? (studio.power ? { studio.openEditor(at:$0) } : nil) : { studio.pick($0) },
-                                            lineTwoTurn:home ? studio.homeLineTwoTurn(at:now) : nil,
-                                            level:home ? studio.level : nil,turn:studio.turn(at:now))
-                                .modifier(LevelReveal(level:studio.level,on:home))
-                                // After Customize's light has traced the card, when it's running.
-                                .overlay { MarchingOutline(on:home && studio.level == .custom && studio.power,delay:outlineDelay) }
-                                .overlay(alignment:.top) { if !home { TurnDots(studio:studio,now:context.date).offset(y:10).transition(.atOnce) } }
-                                .onGeometryChange(for:CGRect.self) { $0.frame(in:.discordTab) } action:{ studio.cardFrame=$0 }
-                        }
-                        .frame(maxHeight:.infinity)
-                    } else {
-                        PhoneFrame {
-                            DiscordCardView(activity:activity,now:context.date,phone:true,selected:studio.slot,pick:{ studio.pick($0) },turn:studio.turn(at:context.date))
-                                .overlay(alignment:.top) { TurnDots(studio:studio,now:context.date).offset(y:10) }
-                        }
-                    }
-                }
-                .transition(.opacity)
+            // My cards gathers round the card (its neighbours, the arrows, what's under it) as the card shrinks into
+            // its place among them: the same card, as the design's is, not another one crossfading with it.
+            ZStack(alignment:.top) {
+                if studio.gallery { DiscordGallery(studio:studio).transition(.identity) }
+                card(home:home)
             }
         } controls: {
             if !home && !studio.gallery { DeviceToggle(studio:studio).transition(.atOnce) }
@@ -158,6 +133,56 @@ struct CardStage: View {
         }
         .animation(.timingCurve(0.22,1,0.36,1,duration:0.52),value:studio.gallery)
         .animation(.easeOut(duration:0.3),value:studio.device)
+    }
+    /// The card: on Discord's tab, in Customize as a computer or a phone shows it (the part being changed marked), and
+    /// in the middle of My cards, smaller, its turns sped up (a step brings the next one in from its side). Off, it
+    /// stays under the stage's cover, as the design shows it.
+    private func card(home:Bool)->some View {
+        let gallery=studio.gallery
+        return TimelineView(.seconds) { context in
+            let now=home ? studio.homeTime(context.date) : context.date
+            let activity=studio.activity(at:now)
+            // From now, not the timeline's tick (up to a second before it).
+            let outlineDelay:Double=studio.levelFlow.map { flow in max(0,0.88-Date().timeIntervalSince(flow.at)) } ?? 0
+            if home || gallery || studio.device == .desktop {
+                // Where the layout puts it, which it has from the moment a fold starts: what the morph needs.
+                DiscordShell(profile:home,fun:studio.profileFun,place:{ studio.foldFrames[home ? .shellHome : .shellEditor]=$0 }) {
+                    DiscordCardView(activity:activity,now:now,selected:home || gallery ? nil : studio.slot,outlineWait:studio.fold?.opening == true ? 0.1 : 0,
+                                    pick:home ? (studio.power ? { studio.openEditor(at:$0) } : nil) : gallery ? nil : { studio.pick($0) },
+                                    pins:gallery ? studio.galleryPins : nil,lineTwoTurn:home ? studio.homeLineTwoTurn(at:now) : nil,
+                                    level:home ? studio.level : nil,turn:studio.turn(at:now))
+                        .modifier(LevelReveal(level:studio.level,on:home))
+                        // After Customize's light has traced the card, when it's running.
+                        .overlay { MarchingOutline(on:home && studio.level == .custom && studio.power,delay:outlineDelay) }
+                        .overlay(alignment:.top) {
+                            if !home {
+                                HStack(spacing:5) {
+                                    TurnDots(studio:studio,now:context.date)
+                                    if gallery && studio.loopLength(at:context.date) > 1 {
+                                        HStack(spacing:3) { DesignIcon("rc:ff",size:9);Text(L("Sped up")).designFont(10,.bold) }
+                                            .foregroundStyle(Color(red:1,green:190/255,blue:140/255).opacity(0.9)).fixedSize().transition(.atOnce)
+                                    }
+                                }.offset(y:10).transition(.atOnce)
+                            }
+                        }
+                        .onGeometryChange(for:CGRect.self) { $0.frame(in:.discordTab) } action:{ studio.cardFrame=$0 }
+                }
+                .scaleEffect(gallery ? 0.86 : 1)
+                // A step in My cards: the next comes in from where its neighbour was, at 0.6 (the one before goes at once:
+                // its neighbour takes its place).
+                .modifier(PartArrival(trigger:nil,gallery ? studio.gallerySlide.flatMap { $0.moving ? (ArrivalStart(x:$0.way*277,opacity:0.9,scale:0.6/0.86),DiscordGallery.slide) : nil } : nil))
+                .id(studio.galleryItem?.design.id)
+                .transition(.identity)
+                .padding(.bottom,gallery ? DiscordGallery.caption : 0)
+                .frame(maxHeight:.infinity)
+            } else {
+                PhoneFrame {
+                    DiscordCardView(activity:activity,now:context.date,phone:true,selected:studio.slot,pick:{ studio.pick($0) },turn:studio.turn(at:context.date))
+                        .overlay(alignment:.top) { TurnDots(studio:studio,now:context.date).offset(y:10) }
+                }
+                .transition(.opacity)
+            }
+        }
     }
 }
 /// The card's box on Discord's tab when a level changes its height, as the design's: the parts inside take their new places
