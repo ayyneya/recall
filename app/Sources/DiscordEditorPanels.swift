@@ -21,29 +21,25 @@ struct EditorPanel: View {
     }
 }
 
-/// When the profile can't be read: why, where to fix it, and the example data to see what the lines would say.
+/// When the profile can't be read: why, in a few words, where to fix it, and the example data to see what the lines
+/// would say. One row, so it doesn't crowd the panel.
 struct ProfileNotice: View {
     @Bindable var studio:DiscordStudio
     var body:some View {
-        VStack(alignment:.leading,spacing:6) {
-            HStack(spacing:7) {
-                DesignIcon("lucide:lock",size:12).foregroundStyle(DiscordColors.ink(0.45))
-                Text(studio.profileState == .hidden ? L("Your profile is private, so only Tonight can show.")
-                     : studio.battleTag.isEmpty ? L("Rank, records and heroes need your BattleTag.") : L("Recall hasn’t found your profile yet."))
-                    .cssLines(NSFont.systemFont(ofSize:12),12*1.45,wraps:true).fixedSize(horizontal:false,vertical:true)
+        let hidden=studio.profileState == .hidden,none=studio.battleTag.isEmpty
+        HStack(spacing:8) {
+            DesignIcon(hidden ? "lucide:lock" : "simple-icons:battledotnet",size:13).foregroundStyle(Color(red:1,green:110/255,blue:100/255).opacity(0.85))
+            Text(hidden ? L("Private profile") : none ? L("Needs your BattleTag") : L("Not found yet")).designFont(12,.semibold).foregroundStyle(DiscordColors.ink(0.75)).lineLimit(1)
+            LinkButton(title:hidden ? L("Make public") : none ? L("Add") : L("Your profile")) { studio.openProfile() }
+            Spacer(minLength:6)
+            Button { studio.example.toggle();studio.preview=nil } label: {
+                HStack(spacing:5) { DesignIcon(studio.example ? "lucide:circle-dot" : "lucide:circle",size:12);Text(L("Example")).designFont(12,.semibold) }
+                    .foregroundStyle(studio.example ? DiscordColors.bright : DiscordColors.ink(0.6)).contentShape(Rectangle())
             }
-            // The two links side by side, or one under the other when they don't fit.
-            FlowLayout(spacing:14,lineSpacing:4) {
-                LinkButton(title:studio.profileState == .hidden ? L("How to make it public") : studio.battleTag.isEmpty ? L("Add your BattleTag") : L("Your profile")) { studio.openProfile() }
-                Button { studio.example.toggle();studio.preview=nil } label: {
-                    HStack(spacing:5) { DesignIcon(studio.example ? "lucide:circle-dot" : "lucide:circle",size:12);Text(L("Preview with example data")).designFont(12,.semibold) }
-                        .foregroundStyle(studio.example ? DiscordColors.bright : DiscordColors.ink(0.6)).contentShape(Rectangle())
-                }.buttonStyle(.plain)
-            }.padding(.leading,19)
+            .buttonStyle(.plain).designTip(L("Preview with example data")).accessibilityLabel(L("Preview with example data"))
         }
-        .font(LauncherStyle.font(12)).foregroundStyle(DiscordColors.ink(0.68))
-        .padding(.horizontal,11).padding(.vertical,9).frame(maxWidth:.infinity,alignment:.leading)
-        .background(DiscordColors.veil(0.04),in:RoundedRectangle(cornerRadius:11))
+        .padding(.leading,11).padding(.trailing,10).frame(height:34)
+        .background(DiscordColors.veil(0.04),in:RoundedRectangle(cornerRadius:10))
         .padding(.top,8)
     }
 }
@@ -251,12 +247,12 @@ struct DynamicOrder: View {
                     }.frame(maxWidth:.infinity,alignment:.leading)
                     if on {
                         Text(L("Now")).designFont(10.5,.bold).foregroundStyle(Color(red:1,green:170/255,blue:120/255))
-                .padding(.horizontal,10).frame(height:42)
-                .background(on ? DiscordColors.accent.opacity(0.08) : .clear,in:RoundedRectangle(cornerRadius:9))
                             .padding(.horizontal,7).frame(height:18).background(DiscordColors.accent.opacity(0.16),in:RoundedRectangle(cornerRadius:6))
                             .popIn(0.3).transition(.identity)
                     }
                 }
+                .padding(.horizontal,10).frame(height:42)
+                .background(on ? DiscordColors.accent.opacity(0.08) : .clear,in:RoundedRectangle(cornerRadius:9))
             }
         }
         .padding(4).background(DiscordColors.veil(0.03),in:RoundedRectangle(cornerRadius:12))
@@ -317,16 +313,16 @@ struct CatalogRow: View {
         let row=CatalogRowState(studio:studio,piece:piece,inputs:inputs,sample:sample)
         HStack(spacing:9) {
             CatalogRowText(row:row).frame(maxWidth:.infinity,alignment:.leading)
-            if let note=row.note { HStack(spacing:4) { DesignIcon(note.icon,size:11);Text(note.text).designFont(11) }.foregroundStyle(DiscordColors.ink(0.42)).fixedSize() }
-            TrailingMark(number:row.number,icon:row.icon,filled:row.filled,dim:row.bar && !row.ready,pulse:row.ready)
+            if let note=row.note { NoteMark(note:note) }
+            TrailingMark(number:row.number,icon:row.icon,filled:row.filled,dim:row.bar && !row.ready || row.blocked,pulse:row.ready)
         }
-        .foregroundStyle(row.current || row.on ? DiscordColors.bright : row.bar && !row.ready ? DiscordColors.ink(0.5) : DiscordColors.ink(0.78))
+        .foregroundStyle(row.current || row.on ? DiscordColors.bright : row.bar && !row.ready || row.blocked ? DiscordColors.ink(0.5) : DiscordColors.ink(0.78))
         .padding(.vertical,row.tall ? 7 : 0).padding(.leading,10).padding(.trailing,6).frame(minHeight:34)
         .background(row.current ? DiscordColors.accent.opacity(0.08) : .clear,in:RoundedRectangle(cornerRadius:9))
-        .rowHover(9,veil:0.055,enabled:!(row.bar && !row.ready))
-        .clickOrHold(row.hold,click:{ if row.bar { if row.ready { studio.unlock(piece,sample) } } else { studio.onlyLine(piece) } },hold:{ studio.toggleLine(piece) })
+        .rowHover(9,veil:0.055,enabled:!(row.bar && !row.ready) && !row.blocked)
+        .clickOrHold(row.hold,click:{ if row.blocked { return };if row.bar { if row.ready { studio.unlock(piece,sample) } } else { studio.onlyLine(piece) } },hold:{ studio.toggleLine(piece) })
         .onHover { inside in
-            guard !row.bar else { return }
+            guard !row.bar && !row.blocked else { return }
             if inside {
                 let open=row.open,piece=piece
                 studio.point(news:piece.topic == .moment) { card in
@@ -352,6 +348,8 @@ struct CatalogRowState {
     let filled:Bool
     let hold:HoldMode?
     let weight:Int
+    /// It needs the profile, which can't be read: it can't be added, or put in place of another, till it can.
+    let blocked:Bool
     var tall:Bool { when != nil || bar }
     @MainActor init(studio:DiscordStudio,piece:CardPiece,inputs:CardInputs,sample:CardInputs) {
         let design=studio.design,place=design.lineTwo.firstIndex { $0.piece == piece }
@@ -371,10 +369,11 @@ struct CatalogRowState {
         let quiet=(piece.topic == .moment && (avail == .news || avail == .ok)) || avail == .locked || bar
         note=quiet ? nil : studio.note(avail)
         text=piece == .highlights ? L("Dynamic") : studio.sampleText(piece,sample)
+        blocked=avail == .profile && !on && !current
         number=on && !changing ? (place ?? 0)+1 : nil
-        icon=changing ? (current ? "lucide:check" : "lucide:arrow-right") : bar ? "rc:key" : avail == .locked ? "lucide:lock" : "lucide:plus"
+        icon=changing ? (current ? "lucide:check" : blocked ? "lucide:lock" : "lucide:arrow-right") : bar ? "rc:key" : avail == .locked || blocked ? "lucide:lock" : "lucide:plus"
         filled=ready || current || (on && !changing)
-        if changing || bar { hold=nil } else if on { hold=design.lineTwo.count > 1 ? .remove : nil } else { hold=full ? nil : .add }
+        if changing || bar || blocked { hold=nil } else if on { hold=design.lineTwo.count > 1 ? .remove : nil } else { hold=full ? nil : .add }
         weight=current ? 600 : 500
     }
 }

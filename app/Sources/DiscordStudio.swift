@@ -468,7 +468,8 @@ import Observation
     func note(_ availability:Availability)->(text:String,icon:String)? {
         switch availability {
         case .ok: return nil
-        case .profile: return (profileState == .hidden ? L("Profile is private") : battleTag.isEmpty ? L("Needs your BattleTag") : L("Not found yet"),"lucide:lock")
+        // Shown as Battle.net's mark alone (NoteMark), the words when it's pointed at.
+        case .profile: return (profileState == .hidden ? L("Profile is private") : battleTag.isEmpty ? L("Needs your BattleTag") : L("Not found yet"),"simple-icons:battledotnet")
         case .match: return (L("Not in a match"),"lucide:swords")
         case .news: return (L("When it happens"),"rc:live")
         case .later: return (L("After a session"),"lucide:hourglass")
@@ -745,9 +746,11 @@ import Observation
         let competitive=ModeStats(games:Tally(played:98,won:46,lost:52),heroes:["winston":25560,"tracer":21600,"kiriko":32040],
                                   bests:["eliminations_most_in_game":53,"all_damage_done_most_in_game":39448,"healing_done_most_in_game":16163,"kill_streak_best":27,"multikill_best":6])
         let quickplay=ModeStats(games:Tally(played:578,won:297,lost:281),heroes:["mercy":55800],heroGames:["mercy":Tally(played:40,won:22,lost:18)])
-        // Blizzard's own emblem for Emerald, as OverFast gives it.
-        let emblem=URL(string:"https://static.playoverwatch.com/images/pages/career/icons/rank/Rank_EmeraldTier.d82e76cb2deeac6d1f4d4cf4d8914517d903eeeb.png")!
-        let ranks=[CareerRank(role:.tank,division:"emerald",tier:1,icon:emblem),CareerRank(role:.open,division:"emerald",tier:1,icon:emblem)]
+        // Blizzard's own emblems, as OverFast gives them (Champion's is its "Ultimate" tier): a Champion tank who
+        // plays damage in Bronze.
+        let emblems="https://static.playoverwatch.com/images/pages/career/icons/rank/"
+        let ranks=[CareerRank(role:.tank,division:"champion",tier:1,icon:URL(string:emblems+"Rank_UltimateTier.bc416c2102ab21d39b2398fdf7571cc56503ea2c.png")!),
+                   CareerRank(role:.damage,division:"bronze",tier:5,icon:URL(string:emblems+"Rank_BronzeTier.f46bc3540601455a7768761396f9310d805052ad.png")!)]
         return CareerCard(identity:CareerIdentity(name:exampleName,title:nil,endorsement:3,avatar:nil),ranks:ranks,season:nil,
                           last:LastSession(competitive:Tally(played:1,won:1),other:1,hero:"tracer",role:.tank,eliminations:31,deaths:7,damage:10623),
                           hero:heroes["tracer"],page:URL(string:"https://overwatch.blizzard.com/en-us/career/"),totals:["competitive":competitive,"quickplay":quickplay],heroes:heroes)

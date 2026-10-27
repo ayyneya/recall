@@ -194,14 +194,26 @@ struct ListRow<Leading:View>: View {
                     }
                 }
             }.frame(maxWidth:.infinity,alignment:.leading)
-            if let note {
-                HStack(spacing:4) { DesignIcon(note.icon,size:11);Text(note.text).designFont(11) }.foregroundStyle(DiscordColors.ink(0.42)).fixedSize()
-            }
+            if let note { NoteMark(note:note) }
             if removable { RemoveButton(action:remove) }
         }
         .padding(EdgeInsets(top:5,leading:8,bottom:5,trailing:4)).frame(minHeight:38)
         .contentShape(Rectangle())
         .popIn(0.38)
+    }
+}
+/// Why a line can't show: its icon and words; the profile's (no BattleTag, private, not found) as Battle.net's mark alone,
+/// in red, its words when pointed at, so it doesn't crowd the row.
+struct NoteMark: View {
+    let note:(text:String,icon:String)
+    var body:some View {
+        if note.icon == "simple-icons:battledotnet" {
+            DesignIcon(note.icon,size:12).foregroundStyle(Color(red:1,green:110/255,blue:100/255).opacity(0.85))
+                .frame(width:20,height:20).contentShape(Rectangle())
+                .designTip(note.text).accessibilityLabel(note.text)
+        } else {
+            HStack(spacing:4) { DesignIcon(note.icon,size:11);Text(note.text).designFont(11) }.foregroundStyle(DiscordColors.ink(0.42)).fixedSize()
+        }
     }
 }
 /// "⚔ Matches too": the other lines are for the menus only.
@@ -266,7 +278,7 @@ struct RuleHeading<Trailing:View>: View {
 extension RuleHeading where Trailing == EmptyView {
     init(text:String) { self.init(text:text) { EmptyView() } }
 }
-/// A text button in the design's link colour ("Done", "How to make it public").
+/// A text button in the design's link colour ("Done", "Add").
 struct LinkButton: View {
     let title:String
     var size:CGFloat=12
