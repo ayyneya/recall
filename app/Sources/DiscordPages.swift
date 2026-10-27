@@ -16,7 +16,7 @@ struct ProfilePage: View {
         // The design's column: when the rows don't fit, the BattleTag's card and both boxes give up height (the
         // list scrolling inside its box), as its flexbox shrinks them.
         FlexColumn(spacing:12) {
-            Text(state == .none ? L("Recall can read your public career profile from your BattleTag. Full and Customize use it for ranks, records and heroes. Only the BattleTag is sent, to OverFast.")
+            Text(state == .none ? L("Recall reads your career profile from your BattleTag, for ranks, records and heroes in Full and Customize. It needs to be public: in Overwatch, Options › Social › Career Profile Visibility › Public. Only the BattleTag is sent.")
                                 : L("Everything Recall reads from your BattleTag, and where it shows on your card. It looks again after you quit Overwatch."))
                 .designFont(12.5,line:12.5*1.5,wraps:true).foregroundStyle(DiscordColors.ink(0.65)).fixedSize(horizontal:false,vertical:true)
             // The card comes back at once, as the design's does.
@@ -519,7 +519,6 @@ extension DiscordStudio {
         let ago=lookedUpAgo
         switch profileState {
         case .hidden:
-            if let at=lookAgainAt,at > Date() { return L("Private profile · OverFast looks again at {0}",at.formatted(date:.omitted,time:.shortened)) }
             return ago.map { L("Private profile · looked up {0}",$0) } ?? L("Private profile")
         case .shown: return ago.map { L("Public profile · looked up {0}",$0) } ?? L("Public profile")
         case .none: return ago.map { L("Not found yet · looked up {0}",$0) } ?? L("Not found yet")
