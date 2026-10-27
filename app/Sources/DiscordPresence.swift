@@ -5,7 +5,7 @@ import Darwin
 // listed only as the Windows overwatch.exe, so it never sees the game run under Wine. Recall tells
 // the Discord app on this Mac itself, over the local socket every Discord client listens on
 // (the same one Discord's own game libraries use): no account, no sign-in, no network. What goes
-// there is the card (game, "In Menus" or "In Match", a timer, a small Recall badge) and nothing
+// there is the card (game, "In Menus" or "In Match", a timer, a small Mac badge) and nothing
 // else; Discord shows it, or not, by the player's own Activity Privacy setting.
 //
 // The only live signals are the process starting and ending, and the voice chat lines Overwatch
@@ -14,10 +14,10 @@ import Darwin
 
 /// How much of the game the card shows.
 enum DiscordPresenceLevel: String, CaseIterable, Identifiable {
-    /// What a PC player gets: "Playing Overwatch" and the time since the game opened.
+    /// What a PC player gets, "Playing Overwatch" and the time since the game opened, with the Mac badge.
     case normal
-    /// Adds whether the player is in the menus or in a match, the match's own timer, and the
-    /// Recall badge. Everything comes from this Mac.
+    /// Adds whether the player is in the menus or in a match, the match's own timer and the group's voice.
+    /// Everything comes from this Mac.
     case live
     /// Adds the competitive rank and how the last session went, from the player's public career
     /// profile through OverFast (CareerProfile.swift): the Default card (DiscordCardTemplate.swift).
@@ -313,9 +313,9 @@ struct PresenceTexts: Equatable {
     var voice:String
     /// The hover text of the small Recall badge.
     var badge:String
-    /// The words in the app's language. The badge names the Mac with Apple's logo, which Discord shows as text.
+    /// The words in the app's language.
     static var app:PresenceTexts {
-        PresenceTexts(menu:L("In Menus"),match:L("In Match"),voice:L("In Group Voice"),badge:L("Playing on Mac with {0}",Brand.name).replacingOccurrences(of:"Mac",with:"\u{F8FF}Mac"))
+        PresenceTexts(menu:L("In Menus"),match:L("In Match"),voice:L("In Group Voice"),badge:L("Playing on Mac with {0}",Brand.name))
     }
 }
 
@@ -325,10 +325,11 @@ enum PresenceCard {
     /// Overwatch's largest group: six (6v6).
     static let largestGroup=6
     /// The card Discord shows at Normal and Live (Full's is its design's: DiscordCardTemplate.swift). Normal is
-    /// what Discord shows a PC player; Live adds where the player is, the match's own timer, the group's voice
-    /// and the badge. Times are Unix seconds. The player's own Discord decides whether anyone sees it.
+    /// what Discord shows a PC player, with the Mac badge; Live adds where the player is, the match's own timer
+    /// and the group's voice. Times are Unix seconds. The player's own Discord decides whether anyone sees it.
     static func activity(facts:PresenceFacts,level:DiscordPresenceLevel,launched:Date,texts:PresenceTexts)->[String:Any] {
-        var card:[String:Any]=["type":0,"timestamps":["start":Int(launched.timeIntervalSince1970)]]
+        var card:[String:Any]=["type":0,"timestamps":["start":Int(launched.timeIntervalSince1970)],
+            "assets":["small_image":Brand.macBadge.absoluteString,"small_text":texts.badge]]
         guard level != .normal else { return card }
         switch facts.place {
         case .unknown: break
@@ -337,7 +338,6 @@ enum PresenceCard {
         }
         // The party's size is the voice chat's: the line says so, since the log never tells the group's own.
         if let voice=facts.voice { card["state"]=texts.voice;card["party"]=["id":voice.party,"size":[min(voice.count,largestGroup),largestGroup]] }
-        card["assets"]=["small_image":Brand.discordBadge.absoluteString,"small_text":texts.badge]
         return card
     }
 }

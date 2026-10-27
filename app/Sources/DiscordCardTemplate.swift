@@ -140,7 +140,7 @@ struct DiscordCardDesign: Codable, Equatable, Identifiable {
             let all=(inputs.allRanks.map(\.text)+[inputs.texts.badge]).joined(separator:" · ")
             assets["small_image"]=rank.icon.absoluteString;assets["small_text"]=PresenceCard.fit(all)
         } else {
-            assets["small_image"]=Brand.discordBadge.absoluteString;assets["small_text"]=inputs.texts.badge
+            assets["small_image"]=(badge == .recall ? Brand.discordBadge : Brand.macBadge).absoluteString;assets["small_text"]=inputs.texts.badge
         }
         card["assets"]=assets
         // Get Recall first, always; Discord shows buttons to everyone but the player.

@@ -282,7 +282,7 @@ struct EditorRail: View {
             .frame(width:26,height:26).background(url == nil ? .clear : DiscordColors.tile).clipShape(RoundedRectangle(cornerRadius:8,style:.continuous))
     }
     private func badge(_ now:Date)->some View {
-        let url=(studio.activity(at:now)?["assets"] as? [String:String])?["small_image"].flatMap(URL.init(string:)) ?? Brand.discordBadge
+        let url=(studio.activity(at:now)?["assets"] as? [String:String])?["small_image"].flatMap(URL.init(string:)) ?? Brand.macBadge
         return BadgeImage(url:url,size:20,back:DiscordColors.stage)
     }
 }

@@ -173,9 +173,9 @@ web request it reaches GitHub from your IP address. Turn it off in Settings › 
 and check by hand from the Recall menu.
 
 Recall tells your Discord app that you are playing Overwatch, so your Discord profile can show
-it (Settings › Discord): at Basic the game and how long you have played; at Live, the default, also whether
-you are in the menus, in a group or in a match (in group voice the game does not say whether you are in the
-menus or a match, but says how many of you are in that voice chat), with a small Recall badge. It goes only
+it (Settings › Discord), with a small Mac badge: at Basic the game and how long you have played; at Live, the
+default, also whether you are in the menus, in a group or in a match (in group voice the game does not say
+whether you are in the menus or a match, but says how many of you are in that voice chat). It goes only
 to the Discord app on your Mac, over the local connection Discord offers every app; Recall links no account
 and sends nothing to a server for it. What Recall reads for it is Overwatch's own log file on your Mac.
 Whether other people see it is up to Discord: turn off activity sharing in Discord (User Settings › Activity

@@ -342,10 +342,13 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         let texts=PresenceTexts(menu:"In Menus",match:"In Match",voice:"In Group Voice",badge:"Playing on Mac with Recall")
         let launched=Date(timeIntervalSince1970:1_792_000_000),since=Date(timeIntervalSince1970:1_792_000_600)
         func start(_ card:[String:Any])->Int? { (card["timestamps"] as? [String:Int])?["start"] }
-        // Normal is what a PC player gets, whatever the log says: the game, and the time since it opened.
+        // Normal is what a PC player gets, whatever the log says: the game, and the time since it opened; with the
+        // Mac badge, as at every level.
+        func badge(_ card:[String:Any])->[String:String]? { card["assets"] as? [String:String] }
         for state in [PresenceState.unknown,.menu,.match(since:since)] {
             let card=PresenceCard.activity(facts:PresenceFacts(place:state,voice:GroupVoice(count:3,channel:"773141270",party:"a1b2")),level:.normal,launched:launched,texts:texts)
-            precondition(card["type"] as? Int == 0 && start(card) == 1_792_000_000 && card["details"] == nil && card["assets"] == nil && card["party"] == nil && card["state"] == nil)
+            precondition(card["type"] as? Int == 0 && start(card) == 1_792_000_000 && card["details"] == nil && card["party"] == nil && card["state"] == nil)
+            precondition(badge(card) == ["small_image":Brand.macBadge.absoluteString,"small_text":"Playing on Mac with Recall"])
         }
         let unknown=PresenceCard.activity(facts:PresenceFacts(place:.unknown),level:.live,launched:launched,texts:texts)
         precondition(unknown["details"] == nil && start(unknown) == 1_792_000_000)
@@ -366,12 +369,13 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         // Never more than six of six.
         let crowded=PresenceCard.activity(facts:PresenceFacts(place:.menu,voice:GroupVoice(count:8,channel:"x",party:"c3")),level:.live,launched:launched,texts:texts)
         precondition((crowded["party"] as? [String:Any])?["size"] as? [Int] == [6,6])
-        // The Recall badge, loaded from the repository's icon, on every Live card.
+        // The Mac badge, loaded from the repository, on every Live card; never Apple's logo, in the picture or the words.
         for card in [unknown,menu,group,match] {
             let assets=card["assets"] as? [String:String]
-            precondition(assets?["small_image"] == Brand.discordBadge.absoluteString && assets?["small_text"] == "Playing on Mac with Recall" && assets?["large_image"] == nil)
+            precondition(assets?["small_image"] == Brand.macBadge.absoluteString && assets?["small_text"] == "Playing on Mac with Recall" && assets?["large_image"] == nil)
         }
-        precondition(Brand.discordBadge.scheme == "https" && Brand.discordApplicationID == "356875221078245376")
+        precondition(Brand.macBadge.scheme == "https" && Brand.discordBadge.scheme == "https" && Brand.discordApplicationID == "356875221078245376")
+        precondition(!PresenceTexts.app.badge.contains("\u{F8FF}"))
         precondition(JSONSerialization.isValidJSONObject(match))
         // Discord wants two characters at least in a line, and no more than 128.
         precondition((2...128).contains((menu["details"] as! String).count) && (2...128).contains((match["details"] as! String).count) && (2...128).contains((group["state"] as! String).count))
@@ -609,10 +613,10 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         precondition(size(server.card(fd)) == [1,6])
         append(logLine(partyLeave,at:Date())+"\r\n",to:log)
         precondition(details(server.card(fd)) == "In Menus")
-        // Normal says nothing the game says.
+        // Normal says nothing the game says; the badge stays.
         presence.update(level:.normal,texts:texts)
         card=(server.card(fd) ?? nil) as! [String:Any]
-        precondition(card["details"] == nil && card["assets"] == nil)
+        precondition(card["details"] == nil && card["state"] == nil && card["assets"] != nil)
         presence.update(level:.live,texts:texts)
         // The log is read again before anything is shown: the first card is the right one, with no empty one before it.
         precondition(details(server.card(fd,2000)) == "In Menus","back at Live the log is read again from the start")

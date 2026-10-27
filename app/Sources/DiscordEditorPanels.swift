@@ -733,7 +733,7 @@ private struct BadgeThumb: View {
             .overlay(alignment:.bottomTrailing) {
                 Group {
                     if badge == .rank,let rank { RemoteImage(url:rank,fill:false) { Color.clear }.frame(width:16,height:16) }
-                    else { BadgeImage(url:Brand.discordBadge,size:16,back:DiscordColors.stage) }
+                    else { BadgeImage(url:badge == .recall ? Brand.discordBadge : Brand.macBadge,size:16,back:DiscordColors.stage) }
                 }
                 .frame(width:20,height:20).background(DiscordColors.stage,in:Circle())
                 .overlay { Circle().strokeBorder(Color(red:36/255,green:37/255,blue:41/255),lineWidth:2.5).padding(-2.5) }

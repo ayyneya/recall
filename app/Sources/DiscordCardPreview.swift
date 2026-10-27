@@ -27,9 +27,15 @@ enum DiscordColors {
     private var images:[URL:NSImage]=[:]
     private var loading:Set<URL>=[]
     private var waiting:[URL:[()->Void]]=[:]
-    func image(_ url:URL)->NSImage? { images[url] }
+    func image(_ url:URL)->NSImage? { images[url] ?? bundled(url) }
+    /// The Mac badge is the app's own copy: the same file Discord loads, there before it's on the main branch.
+    private func bundled(_ url:URL)->NSImage? {
+        guard url == Brand.macBadge,let image=Bundle.main.url(forResource:"MacBadge",withExtension:"png").flatMap(NSImage.init(contentsOf:)) else { return nil }
+        images[url]=image
+        return image
+    }
     func load(_ url:URL,done:@escaping ()->Void) {
-        if images[url] != nil { done();return }
+        if image(url) != nil { done();return }
         waiting[url,default:[]].append(done)
         guard !loading.contains(url) else { return }
         loading.insert(url)

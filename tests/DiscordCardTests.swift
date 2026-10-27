@@ -129,13 +129,13 @@ import Foundation
         precondition(assets(card)["large_text"] == "Most played last session: Widowmaker · All heroes: 31 eliminations, 7 deaths, 10,623 damage")
         // A profile kept from before the history (an earlier Recall): its last session still shows.
         precondition(design.activity(inputs(history:CareerHistory()))["state"] as? String == "Last · Comp 1–0 · 1 other")
-        // The first look, with no session yet: all-time; no profile: tonight's matches, the BattleTag's name, the Recall badge.
+        // The first look, with no session yet: all-time; no profile: tonight's matches, the BattleTag's name, the Mac badge.
         var first=profile();first.last=nil;first.hero=nil
         card=design.activity(inputs(profile:first,history:CareerHistory()))
         precondition(card["state"] as? String == "All · Comp 46–52" && assets(card)["large_image"] == "https://x/avatar.png" && assets(card)["large_text"] == "pyxee · :3")
         card=design.activity(inputs(profile:nil))
         precondition(card["details"] as? String == "pyxee · In Menus" && card["state"] as? String == "2 matches tonight" && assets(card)["large_image"] == nil)
-        precondition(assets(card)["small_image"] == Brand.discordBadge.absoluteString && assets(card)["small_text"] == "Playing on Mac with Recall" && (card["buttons"] as? [[String:String]])?.count == 1)
+        precondition(assets(card)["small_image"] == Brand.macBadge.absoluteString && assets(card)["small_text"] == "Playing on Mac with Recall" && (card["buttons"] as? [[String:String]])?.count == 1)
         precondition(design.activity(inputs(profile:nil,matches:0))["state"] == nil)
         // Where the log can't tell where the player is: the name alone, nothing from the profile's news.
         card=design.activity(inputs(.unknown))
@@ -147,7 +147,7 @@ import Foundation
         // Nothing more on line 2 (Highlights says nothing in a match), the match's own timer, no picture, the badge.
         var card=design.activity(inputs(.match(since:since),matches:3))
         precondition(card["details"] as? String == "pyxee · In Match" && card["state"] == nil && assets(card)["large_image"] == nil)
-        precondition((card["timestamps"] as? [String:Int])?["start"] == Int(since.timeIntervalSince1970) && assets(card)["small_image"] == Brand.discordBadge.absoluteString)
+        precondition((card["timestamps"] as? [String:Int])?["start"] == Int(since.timeIntervalSince1970) && assets(card)["small_image"] == Brand.macBadge.absoluteString)
         precondition(card["buttons"] != nil,"the buttons make no claim about the match")
         // A source that knows the match is competitive puts the rank on it.
         var known=inputs(.match(since:since));known.competitive=true
@@ -206,7 +206,7 @@ import Foundation
             let card=design.activity(inputs(now:start.addingTimeInterval(TimeInterval(k*45))))
             return (assets(card)["large_image"],assets(card)["small_image"])
         }
-        precondition(Set(shown.map(\.0)) == ["https://x/avatar.png","https://x/ana.png"] && Set(shown.map(\.1)) == ["https://x/emerald.png",Brand.discordBadge.absoluteString],"\(shown)")
+        precondition(Set(shown.map(\.0)) == ["https://x/avatar.png","https://x/ana.png"] && Set(shown.map(\.1)) == ["https://x/emerald.png",Brand.macBadge.absoluteString],"\(shown)")
         precondition(design.nextTurn(inputs()) != nil)
         // In a match the rank badge sits out, and the Recall badge stands in when it's the only other.
         design.badges=[.rank,.recall]

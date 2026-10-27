@@ -377,8 +377,9 @@ Discord on a Mac finds games by their Mac executable, and Overwatch is listed on
 Discord client listens on (`discord-ipc-0` to `-9` in the temporary folder; no account, no sign-in, no
 network) and sets one card under Blizzard's own Overwatch listing (`Brand.discordApplicationID`), which
 reads "Playing Overwatch" with Overwatch's icon and the time since the game opened, as it does for a PC
-player. How much it says is a level: Basic is that card; Live, the default, adds In Menus or In Match, the
-match's own timer and a small Recall badge (the app icon, which Discord loads from the repository); Full and
+player, with a small Mac badge (an original drawing of a Mac, `scripts/mac_badge.swift`, which Discord
+loads from the repository's main branch) at every level. How much it says is a level: Basic is that card;
+Live, the default, adds In Menus or In Match, the match's own timer and the group's voice; Full and
 Customize are below. A power button on the tab's stage turns the card off altogether (`AppModel.presencePower`):
 no log read, no Discord connection, no lookup; Discord's own Activity Privacy hides it too. The card follows
 the game: it goes up when macOS reports Overwatch's own app (`org.overwatch2mac.overwatch`,

@@ -28,6 +28,9 @@ enum Brand {
     /// icon from the repository, which Discord loads from this link.
     static let discordApplicationID="356875221078245376"
     static let discordBadge=URL(string:"https://raw.githubusercontent.com/\(repositoryPath)/main/app/Resources/AppIcon.png")!
+    /// The card's Mac badge (an original drawing of a Mac, scripts/mac_badge.swift), loaded the same way. Settings
+    /// › Discord shows the app's own copy, so it shows there before it's on the main branch.
+    static let macBadge=URL(string:"https://raw.githubusercontent.com/\(repositoryPath)/main/app/Resources/MacBadge.png")!
     static var trademarks:String { L("Not affiliated with or endorsed by Blizzard Entertainment or Apple. Overwatch is a trademark of Blizzard Entertainment, Inc. Mac is a trademark of Apple Inc.") }
 
     // The author's links. Mosaic News opens on the App Store, where every Mac that runs
