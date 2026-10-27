@@ -410,7 +410,6 @@ private struct HoldToErase: View {
             withAnimation(.timingCurve(0.22,1,0.36,1,duration:0.26)) { start=nil }
             withAnimation(.timingCurve(0.22,1,0.36,1,duration:0.3)) { studio.eraseProgress=0 }
         })
-        .designTip(L("Hold for two seconds. Ranks and all-time records come back at the next look; sessions don’t."))
         .accessibilityLabel(L("Hold to erase")).accessibilityAction { studio.eraseHistory() }
     }
     private func label(_ text:String,fore:Color)->some View {

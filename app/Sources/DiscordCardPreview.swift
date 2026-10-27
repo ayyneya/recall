@@ -172,20 +172,34 @@ struct DesignTipLayer<Content:View>: View {
             .animation(.easeOut(duration:0.16),value:tips.tip)
     }
     private func bubble(_ tip:DesignTips.Tip)->some View {
-        HStack(alignment:.top,spacing:7) {
-            if tip.discord { DesignIcon("ic:baseline-discord",size:13).foregroundStyle(Color(red:150/255,green:160/255,blue:1)).padding(.top,2) }
-            Text(tip.text).font(tip.discord ? .discord(13,500) : Font(SystemFont.nsFont(11.5,500)))
-                .cssLines(tip.discord ? DiscordFont.nsFont(13,500) : NSFont.systemFont(ofSize:11.5),tip.discord ? 13*1.4 : 11.5*1.4,wraps:true)
-                .fixedSize(horizontal:false,vertical:true)
+        // At most 260 points of words (CSS's max-width, inside the padding), as tall as they wrap to there.
+        CappedWidth(most:260) {
+            HStack(alignment:.top,spacing:7) {
+                if tip.discord { DesignIcon("ic:baseline-discord",size:13).foregroundStyle(Color(red:150/255,green:160/255,blue:1)).padding(.top,2) }
+                Text(tip.text).font(tip.discord ? .discord(13,500) : Font(SystemFont.nsFont(11.5,500)))
+                    .cssLines(tip.discord ? DiscordFont.nsFont(13,500) : NSFont.systemFont(ofSize:11.5),tip.discord ? 13*1.4 : 11.5*1.4,wraps:true)
+                    .fixedSize(horizontal:false,vertical:true)
+            }
         }
         .foregroundStyle(DiscordColors.ink(0.92))
         .padding(.horizontal,tip.discord ? 10 : 9).padding(.vertical,tip.discord ? 7 : 6)
-        .frame(maxWidth:260,alignment:.leading).fixedSize(horizontal:true,vertical:false)
         .background(Color(red:17/255,green:18/255,blue:20/255).opacity(0.95),in:RoundedRectangle(cornerRadius:8))
         .overlay { RoundedRectangle(cornerRadius:8).strokeBorder(.white.opacity(0.07),lineWidth:1) }
         // One shadow for the whole bubble, not one for each line of text in it.
         .compositingGroup().shadow(color:.black.opacity(0.5),radius:14,y:10)
         .environment(\.colorScheme,.dark)
+    }
+    /// As wide as its one line, up to `most`; past that, wrapping at `most` and as tall as that makes it.
+    private struct CappedWidth: Layout {
+        let most:CGFloat
+        func sizeThatFits(proposal:ProposedViewSize,subviews:Subviews,cache:inout ())->CGSize {
+            guard let view=subviews.first else { return .zero }
+            let width=min(most,view.sizeThatFits(.unspecified).width)
+            return CGSize(width:width,height:view.sizeThatFits(ProposedViewSize(width:width,height:nil)).height)
+        }
+        func placeSubviews(in bounds:CGRect,proposal:ProposedViewSize,subviews:Subviews,cache:inout ()) {
+            subviews.first?.place(at:bounds.origin,proposal:ProposedViewSize(width:bounds.width,height:nil))
+        }
     }
     /// Centred on what it's about, above it (below when asked, or when there's no room), inside the sheet.
     private func place(_ tip:DesignTips.Tip,in sheet:CGSize)->CGSize {
