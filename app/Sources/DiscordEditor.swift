@@ -103,19 +103,20 @@ struct CardStage: View {
             } else {
                 // Off, the card stays under the stage's cover, as the design shows it.
                 TimelineView(.seconds) { context in
-                    let activity=studio.activity(at:context.date)
+                    let now=home ? studio.homeTime(context.date) : context.date
+                    let activity=studio.activity(at:now)
                     // From now, not the timeline's tick (up to a second before it).
                     let outlineDelay:Double=studio.levelFlow.map { flow in max(0,0.88-Date().timeIntervalSince(flow.at)) } ?? 0
                     if home || studio.device == .desktop {
                         // Where the layout puts it, which it has from the moment a fold starts: what the morph needs.
                         DiscordShell(profile:home,fun:studio.profileFun,place:{ studio.foldFrames[home ? .shellHome : .shellEditor]=$0 }) {
-                            DiscordCardView(activity:activity,now:context.date,selected:home ? nil : studio.slot,outlineWait:studio.fold?.opening == true ? 0.1 : 0,
+                            DiscordCardView(activity:activity,now:now,selected:home ? nil : studio.slot,outlineWait:studio.fold?.opening == true ? 0.1 : 0,
                                             pick:home ? (studio.power ? { studio.openEditor(at:$0) } : nil) : { studio.pick($0) },
-                                            lineTwoTurn:home ? studio.homeLineTwoTurn(at:context.date) : nil,
-                                            level:home ? studio.level : nil,turn:studio.turn(at:context.date))
+                                            lineTwoTurn:home ? studio.homeLineTwoTurn(at:now) : nil,
+                                            level:home ? studio.level : nil,turn:studio.turn(at:now))
                                 .modifier(LevelReveal(level:studio.level,on:home))
                                 // After Customize's light has traced the card, when it's running.
-                                .overlay { MarchingOutline(on:home && studio.level == .custom,delay:outlineDelay) }
+                                .overlay { MarchingOutline(on:home && studio.level == .custom && studio.power,delay:outlineDelay) }
                                 .overlay(alignment:.top) { if !home { TurnDots(studio:studio,now:context.date).offset(y:10).transition(.atOnce) } }
                                 .onGeometryChange(for:CGRect.self) { $0.frame(in:.discordTab) } action:{ studio.cardFrame=$0 }
                         }

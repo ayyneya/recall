@@ -20,6 +20,8 @@ struct DiscordStage<Content:View,Controls:View>: View {
             DotPattern().fill(.white.opacity(0.05)).padding(1).allowsHitTesting(false)
             content.padding(.top,top).frame(maxWidth:.infinity,maxHeight:.infinity)
         }
+        // Off, what's on the stage blurs well away under the cover.
+        .blur(radius:power && !studio.power ? 18 : 0)
         .frame(maxWidth:.infinity).frame(height:height)
         // The bars move with the stage as one, so what comes in with another screen rides along at once (SwiftUI moves
         // each drawn view on its own, and a new one would show at its new place while the bar still moves).
@@ -27,6 +29,8 @@ struct DiscordStage<Content:View,Controls:View>: View {
             HStack(spacing:6) {
                 DesignIcon("ic:baseline-discord",size:16).foregroundStyle(DiscordColors.ink(0.45))
                     .frame(width:26,height:26).background(.white.opacity(0.05),in:RoundedRectangle(cornerRadius:8))
+                // What the stage is, on Discord's tab (Customize names the card here instead).
+                if power { Text(L("In Discord")).designFont(11,.semibold).tracking(11*0.04).foregroundStyle(DiscordColors.ink(0.45)) }
                 controls
             }.padding(.leading,11).padding(.top,9).geometryGroup()
         }
@@ -102,7 +106,6 @@ private struct PowerButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .designTip(studio.power ? L("Discord card is on. Turn it off to unload it entirely: while on, it uses well under 0.1% of your CPU.") : L("Turn the Discord card back on."))
         .accessibilityLabel(L("Discord card on or off"))
     }
 }
@@ -113,13 +116,18 @@ private struct OffCover: View {
         VStack(spacing:8) {
             DesignIcon("lucide:power-off",size:22).foregroundStyle(DiscordColors.ink(0.6))
             Text(L("Discord card is off")).designFont(14,.semibold).foregroundStyle(DiscordColors.body)
-            Text(L("Recall stops reading the game log, disconnects from Discord and stops the timer. Nothing stays loaded."))
+            Text(L("Recall stops reading the game log and disconnects from Discord: nothing stays loaded. When on, it uses well under 0.1% of your CPU."))
                 .designFont(12,line:12*1.5).foregroundStyle(DiscordColors.ink(0.62)).multilineTextAlignment(.center).frame(maxWidth:300)
             FillButton(title:L("Turn on"),height:30,size:12.5,radius:9,padding:14,weight:.bold) { studio.setPower(true) }.padding(.top,6)
         }
         .frame(maxWidth:.infinity,maxHeight:.infinity)
-        .background(Color(red:23/255,green:24/255,blue:27/255).opacity(0.94))
+        // Over the blurred stage: lightest in the middle, darkening fast past seven tenths of the way out to the
+        // design's 94% at the edges.
+        .background(EllipticalGradient(stops:[.init(color:Self.cover.opacity(0.7),location:0),.init(color:Self.cover.opacity(0.72),location:0.7),
+                                              .init(color:Self.cover.opacity(0.8),location:0.8),.init(color:Self.cover.opacity(0.89),location:0.9),
+                                              .init(color:Self.cover.opacity(0.94),location:1)],center:.center,startRadiusFraction:0,endRadiusFraction:0.5))
     }
+    private static let cover=Color(red:23/255,green:24/255,blue:27/255)
 }
 
 extension CoordinateSpaceProtocol where Self == NamedCoordinateSpace {

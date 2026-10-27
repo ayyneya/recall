@@ -165,7 +165,12 @@ import Observation
         var export:()->URL?={ nil }
     }
     @ObservationIgnored var actions=Actions()
-    func setPower(_ on:Bool) { power=on;actions.power(on) }
+    func setPower(_ on:Bool) { power=on;offSince=on ? nil : Date();actions.power(on) }
+    /// When the card was turned off here.
+    private var offSince:Date?
+    /// The time the card on Discord's tab shows: off, it stays as it was when it went off (or when Settings opened),
+    /// so nothing on it runs.
+    func homeTime(_ now:Date)->Date { power ? now : offSince ?? opened }
     /// A level from the line under the card. Customize picked shows the card in use; picked again, it opens it in the
     /// editor.
     func choose(_ level:DiscordPresenceLevel) {
