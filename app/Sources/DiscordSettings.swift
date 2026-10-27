@@ -69,7 +69,7 @@ struct SceneChip: View {
         Button { studio.nextScene() } label: {
             HStack(spacing:6) {
                 if studio.live != nil {
-                    Circle().fill(DiscordColors.online).frame(width:6,height:6).opacity(pulse ? 0.45 : 1)
+                    Circle().fill(DiscordColors.online).frame(width:6,height:6).opacity(pulse ? 0.35 : 1)
                         .onAppear { withAnimation(.easeInOut(duration:0.8).repeatForever()) { pulse=true } }
                 }
                 DesignIcon(match ? "ph:sword-fill" : "ph:squares-four-fill",size:match ? 12.5 : 14)
@@ -86,6 +86,8 @@ struct SceneChip: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).onHover { inside=$0 }
+        // Another state rolls in from five points below.
+        .modifier(PartArrival(trigger:[studio.sceneName,String(studio.sceneVoice)],(ArrivalStart(y:5,opacity:0.2),Animation.timingCurve(0.22,1,0.36,1,duration:0.28)),onAppear:false))
         .accessibilityLabel(studio.live != nil ? L("Following the game") : L("Show the next state"))
         .animation(.easeOut(duration:0.25),value:inside)
     }
