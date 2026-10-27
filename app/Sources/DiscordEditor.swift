@@ -108,7 +108,7 @@ struct CardStage: View {
                     let outlineDelay:Double=studio.levelFlow.map { flow in max(0,0.88-Date().timeIntervalSince(flow.at)) } ?? 0
                     if home || studio.device == .desktop {
                         // Where the layout puts it, which it has from the moment a fold starts: what the morph needs.
-                        DiscordShell(profile:home,avatar:studio.avatar,fun:studio.profileFun,place:{ studio.foldFrames[home ? .shellHome : .shellEditor]=$0 }) {
+                        DiscordShell(profile:home,fun:studio.profileFun,place:{ studio.foldFrames[home ? .shellHome : .shellEditor]=$0 }) {
                             DiscordCardView(activity:activity,now:context.date,selected:home ? nil : studio.slot,outlineWait:studio.fold?.opening == true ? 0.1 : 0,
                                             pick:home ? (studio.power ? { studio.openEditor(at:$0) } : nil) : { studio.pick($0) },
                                             lineTwoTurn:home ? studio.homeLineTwoTurn(at:context.date) : nil,

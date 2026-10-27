@@ -479,8 +479,8 @@ and What Recall remembers (`DiscordPages.swift`) show everything the profile giv
 card, and the sessions kept: holding Erase for two seconds erases them, with ten seconds to undo (closing Settings
 or quitting Recall erases at once, `AppModel.quitting`), and Export
 writes them to Downloads as a spreadsheet (`CareerHistory.csv`). The preview follows the game while it runs
-(`DiscordPresence.gameChanged`), and shows the player's own Discord picture, which Discord gives when Recall
-connects (kept in `discordAvatar`), with the design's status lines beside "You" and its easter eggs
+(`DiscordPresence.gameChanged`), and shows the design's picture of Juno (`app/Resources/Juno.png`), the same for
+every player, with the design's status lines beside "You" and its easter eggs
 (`DiscordProfile.swift`): pointing at the picture bulges it, each click pumps it up until the sixth bursts it
 into pieces that bounce inside the pop-out before it grows back, and pointing at the status line makes its
 letters jump; Customize or a page puts the picture back at once. `tests/DiscordMotionTests.swift` checks the

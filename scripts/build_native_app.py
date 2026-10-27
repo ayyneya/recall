@@ -34,8 +34,9 @@ INFO_STRINGS={'NSMicrophoneUsageDescription':MICROPHONE_USAGE,'NSHumanReadableCo
 # LogsReadme.md: Save Logs' guide for engineers and AI assistants (LogBundle.swift). NotoSans-*.woff2: the font
 # Settings › Discord shows Discord's text in (DiscordDesign.swift; SIL Open Font License, licenses/NOTO-SANS-OFL.txt).
 # MacBadge.png: the Discord card's Mac badge (scripts/mac_badge.swift), shown in Settings › Discord's preview.
+# Juno.png: the picture on Discord's pop-out in Settings › Discord, the design's own.
 RESOURCES=('MosaicLogo.png','LinkedInMark.png','AuthorPhoto.jpg','Wordmark.png','WordmarkDark.png','LogsReadme.md',
-           'NotoSans-Latin.woff2','NotoSans-LatinExt.woff2','MacBadge.png')
+           'NotoSans-Latin.woff2','NotoSans-LatinExt.woff2','MacBadge.png','Juno.png')
 def run(*args):subprocess.run([str(a) for a in args],check=True)
 def localize(resources):
     """English (the strings in the code), then each translation as <language>.lproj with

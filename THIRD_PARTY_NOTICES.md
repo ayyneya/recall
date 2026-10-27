@@ -16,6 +16,7 @@ code or material embedded in a patch or generated test fixture.
 | Native runtime dependencies | Soju's referenced library stack, FreeType, SDL2, Wine Mono, and their dependencies | License texts for the bundled libraries ship in the app under `Contents/Resources/Licenses` |
 | Noto Sans (Latin and Latin Extended) | [Noto Project](https://github.com/notofonts/latin-greek-cyrillic) | SIL Open Font License 1.1; Settings › Discord shows Discord's text in it (`app/Resources/NotoSans-*.woff2`); the license ships in the app as `Contents/Resources/NOTO-SANS-OFL.txt` (licenses/NOTO-SANS-OFL.txt) |
 | Icons in Settings › Discord | Lucide, Phosphor Icons, Material Design Icons, Google Material Icons, Simple Icons | ISC, MIT, Apache 2.0 and CC0; their SVG paths are in `app/Sources/DiscordDesign.swift`, and the notices ship as `Contents/Resources/DESIGN-ICONS-NOTICE.txt` (licenses/DESIGN-ICONS-NOTICE.txt). The Battle.net and Discord marks are their owners' trademarks |
+| Juno's picture in Settings › Discord | Overwatch, Blizzard | Blizzard's artwork of its hero Juno, the picture on the Discord pop-out that Settings › Discord draws (`app/Resources/Juno.png`); not covered by the project's Apache 2.0 license |
 | Apple support components and Rosetta | Apple | Proprietary; absent from this repository, bundled in the app under Apple's accompanying license, not covered by the project's Apache 2.0 license or the Wine/DXMT licenses |
 | Battle.net and Overwatch | Blizzard | Proprietary; obtained through official channels and absent from this repository |
 

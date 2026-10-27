@@ -108,7 +108,6 @@ final class AppModel {
     private func setUpDiscordStudio() {
         let studio=discordStudio
         studio.level=discordPresenceLevel;studio.power=presencePower;studio.battleTag=battleTag;studio.texts=PresenceTexts.app
-        studio.avatar=UserDefaults.standard.url(forKey:"discordAvatar")
         studio.changed={ [weak self] shelf in shelf.save();self?.discordPresence.update(design:shelf.inUse) }
         studio.actions=DiscordStudio.Actions(level:{ [weak self] in self?.discordPresenceLevel=$0 },
                                              power:{ [weak self] in self?.setPresencePower($0) },
@@ -117,9 +116,9 @@ final class AppModel {
                                              erase:{ [weak self] in self?.eraseCareerHistory() },
                                              export:{ [weak self] in self?.exportSessions() })
         discordPresence.update(design:studio.design)
-        // The preview follows the game while it runs; Discord's picture of the player comes once Recall has connected.
+        // The preview follows the game while it runs.
         discordPresence.gameChanged={ [weak self] live in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.discordStudio.live=live;self?.keepAvatar() } }
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.discordStudio.live=live } }
         }
         refreshStudio()
     }
@@ -142,11 +141,6 @@ final class AppModel {
                 }
             }
         }
-    }
-    /// The player's picture on Discord, kept for the preview while Discord isn't connected.
-    private func keepAvatar() {
-        guard let avatar=discordPresence.avatar,avatar != discordStudio.avatar else { return }
-        discordStudio.avatar=avatar;UserDefaults.standard.set(avatar,forKey:"discordAvatar")
     }
     /// Settings › Discord's power button. Off, nothing runs: no card, no log, no lookups. Support's way to turn it
     /// off is the same setting:
@@ -228,8 +222,8 @@ final class AppModel {
     private func presenceGameEnded(_ pid:pid_t) {
         guard presencePid == pid else { return }
         presenceEnded=pid;stopPresence()
-        // The run is in the history now (on the profile's queue, which the read waits for), and Discord's picture known.
-        keepAvatar();refreshStudio()
+        // The run is in the history now (on the profile's queue, which the read waits for).
+        refreshStudio()
         // Blizzard updates the profile once the game has closed: one more look a little later, while Recall is
         // open, finds the session that just ended, so the next game's card has it from the start.
         let look=DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.afterQuit=nil;self?.lookUpCareer() } }

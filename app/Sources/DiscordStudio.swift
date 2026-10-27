@@ -35,8 +35,6 @@ import Observation
     var texts=PresenceTexts.app
     /// The game's own facts while it runs: the preview follows them instead of the scene chosen here.
     var live:(place:PresenceState,voice:GroupVoice?,matches:Int,launched:Date)?
-    /// The player's own picture on Discord, from Discord when Recall connects to it.
-    var avatar:URL?
 
     // MARK: the cards
     var shelf:DiscordCardShelf { didSet { if shelf != oldValue { changed(shelf) } } }

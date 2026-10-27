@@ -414,16 +414,6 @@ final class DiscordIPC {
     var connected:Bool { lock.lock();defer { lock.unlock() };return connectedFlag }
     /// Whether Discord took the last card sent (it answers each one, with an error when it refuses it).
     var accepted:Bool { lock.lock();defer { lock.unlock() };return acceptedFlag }
-    private var avatarURL:URL?
-    /// The player's picture on Discord, as Discord told it when Recall connected (Settings' preview shows it).
-    var avatar:URL? { lock.lock();defer { lock.unlock() };return avatarURL }
-    /// Discord's address for a user's picture; nil for one without (Discord then shows its default). The id is
-    /// digits and the hash letters, digits and "_" ("a_…" for a moving picture), nothing else.
-    static func avatar(_ user:[String:Any]?)->URL? {
-        func plain(_ text:String,_ allowed:(Character)->Bool)->Bool { !text.isEmpty && text.allSatisfy { $0.isASCII && allowed($0) } }
-        guard let id=user?["id"] as? String,plain(id,\.isNumber),let hash=user?["avatar"] as? String,plain(hash,{ $0.isLetter || $0.isNumber || $0 == "_" }) else { return nil }
-        return URL(string:"https://cdn.discordapp.com/avatars/\(id)/\(hash).png?size=128")
-    }
     /// How many times the sockets were looked for, for the tests.
     var attempts:Int { queue.sync { tries } }
 
@@ -523,8 +513,7 @@ final class DiscordIPC {
                 guard let message=try? JSONSerialization.jsonObject(with:frame.body) as? [String:Any] else { break }
                 if message["evt"] as? String == "READY" {
                     handshakeTimeout?.cancel();ready=true;pending=true
-                    let user=(message["data"] as? [String:Any])?["user"] as? [String:Any]
-                    lock.lock();connectedFlag=true;avatarURL=Self.avatar(user);lock.unlock()
+                    lock.lock();connectedFlag=true;lock.unlock()
                     flush()
                 } else if message["cmd"] as? String == "SET_ACTIVITY" {
                     let taken=message["evt"] as? String != "ERROR"
@@ -723,8 +712,6 @@ final class DiscordPresence {
     }
     /// Whether Discord has answered, and whether it took the last card (for the support report).
     var connected:Bool { ipc.connected }
-    /// The player's picture on Discord, once Recall has connected to it.
-    var avatar:URL? { ipc.avatar }
     var accepted:Bool { ipc.accepted }
     /// When a process started, from the system's own record. macOS gives no launch date for Overwatch's
     /// app (it is started by Wine, not by the Finder), and the timer on the card counts from the start.

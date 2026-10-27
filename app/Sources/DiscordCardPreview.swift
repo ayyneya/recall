@@ -541,11 +541,10 @@ private struct PartHighlight: View {
     }
 }
 
-/// The card on Discord's profile pop-out: on the home page with its banner and the player's own picture; in
+/// The card on Discord's profile pop-out: on the home page with its banner and the design's picture of Juno; in
 /// Customize just the card (the banner and the picture fold away).
 struct DiscordShell<Card:View>: View {
     var profile=true
-    var avatar:URL?
     /// The easter eggs on the picture and the status line (DiscordProfile.swift): the Discord tab's own, so they
     /// outlast the card's redrawing; the gallery's cards, which show no profile, use their own.
     var fun=ProfileFun()
@@ -565,7 +564,7 @@ struct DiscordShell<Card:View>: View {
                 }
             }
             .frame(height:profile ? 58 : 0).clipShape(UnevenRoundedRectangle(topLeadingRadius:10,topTrailingRadius:10))
-            DiscordProfileTop(avatar:avatar,fun:fun)
+            DiscordProfileTop(fun:fun)
                 .frame(height:profile ? 52 : 10,alignment:.top).opacity(profile ? 1 : 0).allowsHitTesting(profile)
             card.padding([.horizontal,.bottom],10)
         }

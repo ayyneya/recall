@@ -180,9 +180,9 @@ to the Discord app on your Mac, over the local connection Discord offers every a
 and sends nothing to a server for it. What Recall reads for it is Overwatch's own log file on your Mac.
 Whether other people see it is up to Discord: turn off activity sharing in Discord (User Settings › Activity
 Privacy). The power button on the tab's card turns it off altogether: then Recall reads no log, connects to
-no Discord and looks nothing up. It is not used with China's Battle.net. Settings shows the card with your
-own Discord picture, which your Discord app tells Recall when it connects; Recall keeps its address in its
-settings for that, and loads the picture from Discord. The preview's other pictures load from where Discord
+no Discord and looks nothing up. It is not used with China's Battle.net. Settings shows the card under a
+picture of Juno that comes with Recall, the same for everyone; Recall keeps nothing about your Discord
+account. The preview's other pictures load from where Discord
 loads them: Overwatch's icon from Discord, and heroes, ranks and player icons from Blizzard's servers.
 
 At Full, and in a card of your own (Customize), the card can also show, from your public Overwatch career

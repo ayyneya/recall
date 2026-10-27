@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-// The top of Discord's pop-out on Discord's tab, as the design draws it: your picture with its online dot, "You" and
+// The top of Discord's pop-out on Discord's tab, as the design draws it: Juno's picture with its online dot, "You" and
 // the status lines beside it (DiscordShell), and the design's easter eggs on them. Pointing at the picture bulges it
 // like the flushed emoji; each click pumps it up a little more, and the sixth bursts it into pieces that bounce around
 // inside the pop-out (". . . oh moons") before it grows back. Pointing at the status line makes its letters jump through
@@ -11,11 +11,10 @@ import AppKit
 
 /// Under the banner: the picture in its ring, "You", and the status lines.
 struct DiscordProfileTop: View {
-    let avatar:URL?
     let fun:ProfileFun
     var body:some View {
         ZStack(alignment:.topLeading) {
-            AvatarRing(avatar:avatar,fun:fun).offset(x:12,y:-36)
+            AvatarRing(fun:fun).offset(x:12,y:-36)
             names.padding(.leading,98).padding(.top,2)
         }
         .frame(maxWidth:.infinity,alignment:.topLeading)
@@ -40,35 +39,31 @@ private struct OnlineDot: View {
     var body:some View { Circle().fill(DiscordColors.online).frame(width:14,height:14).padding(4).background(DiscordColors.popout,in:Circle()) }
 }
 
-/// The picture: yours from Discord, or Discord's mark on its blurple while there's none.
+/// The picture: the design's own, Juno (app/Resources/Juno.png), the same for every player. Never the player's
+/// Discord picture: Recall keeps nothing about their Discord account.
 private struct AvatarPicture: View {
-    let url:URL?
-    var body:some View {
-        RemoteImage(url:url) {
-            Circle().fill(Color(red:88/255,green:101/255,blue:242/255)).overlay { DesignIcon("ic:baseline-discord",size:34).foregroundStyle(.white) }
-        }
-    }
+    static let juno=Bundle.main.url(forResource:"Juno",withExtension:"png").flatMap(NSImage.init(contentsOf:)) ?? NSImage()
+    var body:some View { Image(nsImage:Self.juno).resizable().interpolation(.high) }
 }
 
-/// Your picture in its ring, with the online dot. Pointing at it bulges it, a click pumps it (ProfileFun): its pumped copy
+/// The picture in its ring, with the online dot. Pointing at it bulges it, a click pumps it (ProfileFun): its pumped copy
 /// takes its place until it settles back, or bursts and grows back here.
 private struct AvatarRing: View {
-    let avatar:URL?
     let fun:ProfileFun
     var body:some View {
         TimelineView(.animation(paused:!fun.ticking)) { context in
             let t=context.date.timeIntervalSinceReferenceDate,look=fun.ring(at:t)
             ZStack {
                 ZStack {
-                    AvatarPicture(url:avatar)
+                    AvatarPicture()
                     if let lens=look.lens { Image(decorative:lens,scale:2).resizable() }
                 }
                 .frame(width:66,height:66).clipShape(Circle())
                 .scaleEffect(look.scale).rotationEffect(.degrees(look.turn))
                 .opacity(look.hidden ? 0 : 1)
                 .contentShape(Circle())
-                .onHover { fun.point($0,avatar:avatar) }
-                .onTapGesture { fun.pop(avatar:avatar) }
+                .onHover { fun.point($0) }
+                .onTapGesture { fun.pop() }
             }
             .frame(width:76,height:76).background(DiscordColors.popout,in:Circle())
             .overlay(alignment:.bottomTrailing) {
@@ -389,25 +384,25 @@ final class LensPicture {
     private var rig:Rig?
     /// When a bulge last went with a rig (as it settled or grew back): one made before then is gone.
     private var bulgeGone = -Double.infinity
-    @ObservationIgnored private var picture:(url:URL?,loaded:Bool,lens:LensPicture)?
+    @ObservationIgnored private var picture:LensPicture?
 
     private var now:Double { Date().timeIntervalSinceReferenceDate }
 
     /// Pointing at the picture or away from it (not while it's pumped).
-    func point(_ inside:Bool,avatar:URL?) {
+    func point(_ inside:Bool) {
         let t=now
         if let rig,t < rig.over { return }
-        guard lens(avatar) != nil else { return }
+        guard lens() != nil else { return }
         let alive=hover.map { $0.born > gone(at:t) } ?? false
         hover=Hover(inside:inside,start:t,from:alive ? hover!.value(at:t) : 0,born:alive ? hover!.born : t)
         ticking=true
     }
     /// A click on the picture: another pump, or the burst on the sixth (none while it bursts).
-    func pop(avatar:URL?) {
+    func pop() {
         let t=now
         if let rig,t >= rig.over { bulgeGone=max(bulgeGone,rig.bulgeLost ?? t);self.rig=nil }
         if let rig,rig.bursting(at:t) { return }
-        guard let lens=lens(avatar) else { return }
+        guard let lens=lens() else { return }
         var rig=self.rig ?? Rig(start:t,seed:UInt64.random(in:0...UInt64.max))
         rig.click(at:t)
         if rig.boom == t { rig.prepareBurst(lens,shell:shell) }
@@ -449,7 +444,7 @@ final class LensPicture {
     func ring(at t:Double)->RingLook {
         var look=RingLook()
         if let hover,hover.born > gone(at:t),!(rig.map { t >= $0.start && hover.born <= $0.start } ?? false),hover.shown(at:t) {
-            look.lens=picture?.lens.bulged(0.62*hover.value(at:t))
+            look.lens=picture?.bulged(0.62*hover.value(at:t))
         }
         guard let rig,t >= rig.start else { return look }
         if let settle=rig.settle,t >= settle {
@@ -476,7 +471,7 @@ final class LensPicture {
         var dot:DotLook
     }
     func pump(at t:Double)->PumpLook? {
-        guard let rig,let lens=picture?.lens,t >= rig.start,!(rig.settle.map { t >= $0 } ?? false),!(rig.burst.map { t >= $0.at } ?? false) else { return nil }
+        guard let rig,let lens=picture,t >= rig.start,!(rig.settle.map { t >= $0 } ?? false),!(rig.burst.map { t >= $0.at } ?? false) else { return nil }
         return PumpLook(lens:lens.bulged(rig.lens.value(at:t)),cracks:rig.cracks[rig.stage(at:t)],face:rig.face.value(at:t),scaleX:rig.scaleX.value(at:t),
                         scaleY:rig.scaleY.value(at:t),shake:rig.shake(at:t),strain:rig.strain.value(at:t),tint:rig.tint.value(at:t),dot:rig.flyingDot(at:t))
     }
@@ -512,19 +507,10 @@ final class LensPicture {
         guard let rig,let lost=rig.bulgeLost,lost <= t else { return bulgeGone }
         return max(bulgeGone,lost)
     }
-    /// The picture's pixels: Discord's picture as it's loaded, or the mark while there's none.
-    private func lens(_ avatar:URL?)->LensPicture? {
-        let image=avatar.flatMap { RemoteImages.shared.image($0) }
-        if let picture,picture.url == avatar,picture.loaded == (image != nil) { return picture.lens }
-        let pixels:CGImage?
-        if let image { pixels=image.cgImage(forProposedRect:nil,context:nil,hints:nil) } else {
-            let renderer=ImageRenderer(content:AvatarPicture(url:nil).frame(width:66,height:66))
-            renderer.scale=2
-            pixels=renderer.cgImage
-        }
-        guard let pixels,let lens=LensPicture(pixels) else { return nil }
-        picture=(avatar,image != nil,lens)
-        return lens
+    /// The picture's pixels, made the first time they're needed.
+    private func lens()->LensPicture? {
+        if picture == nil { picture=AvatarPicture.juno.cgImage(forProposedRect:nil,context:nil,hints:nil).flatMap(LensPicture.init) }
+        return picture
     }
 
     /// The hover bulge: in over 560 ms with the design's own overshooting curve, out over 320 ms (outCubic), from where it
