@@ -60,13 +60,13 @@ extension CardInputs {
         return steps >= 2 ? "↟" : steps == 1 ? "↑" : steps == -1 ? "↓" : steps <= -2 ? "↡" : "–"
     }
     func rankText(_ rank:CareerRank)->String {
-        let rest="\(arrow(rank)) \(rank.name)"
-        // One phrase per role, so a role's name never shares a key with the same word elsewhere.
+        // One phrase per role, with the mark and the rank apart, so a role's phrase never shares a key with the same
+        // words elsewhere ("Support {0}" is Support Recall).
         switch rank.role {
-        case .tank: return L("Tank {0}",rest)
-        case .damage: return L("Damage {0}",rest)
-        case .support: return L("Support {0}",rest)
-        case .open: return L("6v6 {0}",rest)
+        case .tank: return L("Tank {0} {1}",arrow(rank),rank.name)
+        case .damage: return L("Damage {0} {1}",arrow(rank),rank.name)
+        case .support: return L("Support {0} {1}",arrow(rank),rank.name)
+        case .open: return L("6v6 {0} {1}",arrow(rank),rank.name)
         }
     }
 
@@ -202,9 +202,7 @@ extension CardPiece {
             }
         case .best(let line):
             if line == .new { return CardPiece.moment(.newBest).text(i,rank:choice) }
-            let keys:[BestLine:[String]]=[.eliminations:["eliminations_most_in_game"],.damage:["all_damage_done_most_in_game","hero_damage_done_most_in_game"],
-                                          .healing:["healing_done_most_in_game"],.killStreak:["kill_streak_best"],.multikill:["multikill_best"]]
-            guard let key=keys[line]?.first(where:{ key in i.modes.contains { ($0.bests[key] ?? 0) > 0 } }),let value=i.modes.compactMap({ $0.bests[key] }).max() else { return nil }
+            guard let value=line.value(i) else { return nil }
             let number=value.formatted(.number)
             switch line {
             case .eliminations: return L("Best: {0} elims in a game",number)
@@ -242,6 +240,43 @@ extension CardPiece {
                 return L("{0} one-trick",i.heroName(top))
             case .century: return total >= 100 ? L("{0} hours in",String(total/100*100)) : nil
             }
+        }
+    }
+
+    /// Lines that are earned (the titles from hours, a hero's "main"): how far along the player is (1 is earned),
+    /// what earned it, or what it still takes. nil for every other line, and without the profile.
+    func progress(_ i:CardInputs)->(done:Double,earned:String?,needed:String?)? {
+        guard i.profile != nil else { return nil }
+        let percent={ (share:Double) in String(Int((share*100).rounded())) }
+        switch self {
+        case .title(.roleMain):
+            guard let role=[CareerRank.Role.tank,.damage,.support].max(by:{ i.share($0) < i.share($1) }) else { return nil }
+            let share=i.share(role),done=min(1,share/0.45)
+            let words:(String,String)
+            switch role {
+            case .tank: words=(L("Earned: Tank is {0}% of your hours",percent(share)),L("Tank is {0}% of your hours; a main needs 45%.",percent(share)))
+            case .damage: words=(L("Earned: Damage is {0}% of your hours",percent(share)),L("Damage is {0}% of your hours; a main needs 45%.",percent(share)))
+            default: words=(L("Earned: Support is {0}% of your hours",percent(share)),L("Support is {0}% of your hours; a main needs 45%.",percent(share)))
+            }
+            return done >= 1 ? (1,words.0,nil) : (done,nil,words.1)
+        case .title(.flex):
+            let least=[CareerRank.Role.tank,.damage,.support].map(i.share).min() ?? 0
+            return least >= 0.2 ? (1,L("Earned: every role is 20% or more of your hours"),nil)
+                                : (least/0.2,nil,L("Your least-played role is {0}% of your hours; flex needs 20% of each.",percent(least)))
+        case .title(.oneTrick):
+            guard let top=i.topHeroes.first,let time=i.heroTime[top] else { return nil }
+            let share=Double(time)/Double(max(1,i.heroTime.values.reduce(0,+)))
+            return share > 0.5 ? (1,L("Earned: {0} is {1}% of your hours",i.heroName(top),percent(share)),nil)
+                               : (share/0.5,nil,L("{0} is {1}% of your hours; needs over half.",i.heroName(top),percent(share)))
+        case .title(.century):
+            let hours=i.heroTime.values.reduce(0,+)/3600
+            return hours >= 100 ? (1,L("Earned at 100 hours"),nil) : (Double(hours)/100,nil,L("{0} of 100 hours played.",String(hours)))
+        case .hero(let key,.main):
+            guard let top=i.topHeroes.first,let topTime=i.heroTime[top] else { return nil }
+            let hero=key ?? top,time=i.heroTime[hero] ?? 0
+            if hero == top { return (1,L("Earned: your most-played hero, {0}",i.hours(time)),nil) }
+            return (min(0.97,Double(time)/Double(topTime)),nil,L("{0} {1}. Your most-played, {2}, has {3}.",i.heroName(hero),i.hours(time),i.heroName(top),i.hours(topTime)))
+        default: return nil
         }
     }
 
@@ -323,4 +358,14 @@ extension CardPicture {
 
 extension String {
     var nilIfEmpty:String? { isEmpty ? nil : self }
+}
+
+extension BestLine {
+    /// The profile's best for this line, over every mode (OverFast's keys; damage was hero damage on older profiles).
+    func value(_ i:CardInputs)->Int? {
+        let keys:[BestLine:[String]]=[.eliminations:["eliminations_most_in_game"],.damage:["all_damage_done_most_in_game","hero_damage_done_most_in_game"],
+                                      .healing:["healing_done_most_in_game"],.killStreak:["kill_streak_best"],.multikill:["multikill_best"]]
+        guard let key=keys[self]?.first(where:{ key in i.modes.contains { ($0.bests[key] ?? 0) > 0 } }) else { return nil }
+        return i.modes.compactMap { $0.bests[key] }.max()
+    }
 }

@@ -173,26 +173,40 @@ web request it reaches GitHub from your IP address. Turn it off in Settings › 
 and check by hand from the Recall menu.
 
 Recall tells your Discord app that you are playing Overwatch, so your Discord profile can show
-it (Settings › General › Discord): the game and how long you have played and, at Live, whether you
-are in the menus, in a group or in a match (in group voice the game does not say whether you are in the menus or a match, but says how many of you are in that voice chat), with a small Recall badge. It goes only to the Discord app on your
-Mac, over the local connection Discord offers every app; Recall links no account and sends nothing
-to a server for it. What Recall reads for it is Overwatch's own log file on your Mac. Whether other
-people see it is up to Discord: turn off activity sharing in Discord (User Settings › Activity
-Privacy). It is not used with China's Battle.net.
+it (Settings › Discord): at Basic the game and how long you have played; at Live, the default, also whether
+you are in the menus, in a group or in a match (in group voice the game does not say whether you are in the
+menus or a match, but says how many of you are in that voice chat), with a small Recall badge. It goes only
+to the Discord app on your Mac, over the local connection Discord offers every app; Recall links no account
+and sends nothing to a server for it. What Recall reads for it is Overwatch's own log file on your Mac.
+Whether other people see it is up to Discord: turn off activity sharing in Discord (User Settings › Activity
+Privacy). The power button on the tab's card turns it off altogether: then Recall reads no log, connects to
+no Discord and looks nothing up. It is not used with China's Battle.net. Settings shows the card with your
+own Discord picture, which your Discord app tells Recall when it connects; Recall keeps its address in its
+settings for that, and loads the picture from Discord. The preview's other pictures load from where Discord
+loads them: Overwatch's icon from Discord, and heroes, ranks and player icons from Blizzard's servers.
 
-At the Full level (Settings › General › Discord), the card also shows, from your public Overwatch
-career profile: your name in the game, this season's competitive ranks, your player icon and title,
-how your last session went (its matches and their results, the hero you played most, your
-eliminations, deaths and healing or damage, a rank that moved, a personal best), and a button to your
-career page that others can open. For that, and only at Full with a BattleTag entered, Recall sends
-your BattleTag to OverFast (overfast-api.tekrop.fr), an open-source service that reads public career
-profiles: as Overwatch opens and once when you enter the BattleTag, at most once in ten minutes, the
-whole profile only when it changed, and OverFast's hero list (names and portraits) about once a week.
-Nothing else goes with it, and OverFast keeps the profiles it looks up. Your profile must be public (in
-Overwatch: Options › Social › Career Profile Visibility). Recall keeps the BattleTag, the profile's
-totals and how many matches each session had (from Overwatch's log) on your Mac, to tell your last
-session from them; the support report says only whether a BattleTag is set and OverFast's last answer
-code, never the BattleTag.
+At Full, and in a card of your own (Customize), the card can also show, from your public Overwatch career
+profile: your name in the game, this season's competitive ranks, your player icon and title, how your last
+session or a whole day, week or season went (matches and their results, the hero you played most, your
+records), your heroes and hours, your best games, and a button to your career page that others can open.
+For that, and only with a BattleTag entered (Settings › Discord › Your profile), Recall sends your BattleTag
+to OverFast (overfast-api.tekrop.fr), an open-source service that reads public career profiles: as Overwatch
+opens, about twelve minutes after it quits, when you enter the BattleTag and when you choose Look again, at
+most once in ten minutes, the whole profile only when it changed, and OverFast's hero list (names and
+portraits) about once a week. Nothing else goes with it, and OverFast keeps the profiles it looks up. Your
+profile must be public (in Overwatch: Options › Social › Career Profile Visibility). Your profile page in
+Settings lists everything Recall reads from it and where it shows on the card.
+
+What Recall remembers stays on your Mac, in one file in Recall's own Application Support folder: when each
+game session ran and how many matches the log counted, and, with a BattleTag, how your profile changed
+after each session (results, heroes' time, ranks, bests). The card uses it to tell today, this week or this
+season. Settings › Discord › What Recall remembers lists it, exports it to your Downloads folder as a
+spreadsheet, and erases it (hold for two seconds; you have ten seconds to undo). Recall also keeps your
+BattleTag and the profile's last totals in its settings, and your cards. A card you share is a code that
+holds only your choices for the card and its name, never your stats or your BattleTag. The support report
+says only whether a BattleTag is set, OverFast's last answer code, whether the card is on, which ready-made
+card is in use (or that it is your own) and how many cards of your own you have, never the BattleTag or
+what your cards are called or show.
 
 The Mosaic News links in the app open in your browser with a tag naming the
 screen they came from (for example `utm_content=home`), so the author can see

@@ -60,6 +60,8 @@ struct CareerIdentity: Codable, Equatable {
     var title:String?
     var endorsement:Int?
     var avatar:URL?
+    /// The name card's picture (Settings shows that Recall reads it; the card doesn't show it).
+    var namecard:URL?=nil
 }
 
 /// A hero as OverFast lists them: name, portrait and role.
@@ -182,7 +184,7 @@ enum OverFast {
         let shown=(json["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let identity=(json["username"] as? String).map {
             CareerIdentity(name:$0,title:shown,
-                           endorsement:(json["endorsement"] as? [String:Any])?["level"] as? Int,avatar:secure(json["avatar"]))
+                           endorsement:(json["endorsement"] as? [String:Any])?["level"] as? Int,avatar:secure(json["avatar"]),namecard:secure(json["namecard"]))
         }
         return (updated,ranks,pc["season"] as? Int,identity)
     }
@@ -303,6 +305,25 @@ final class CareerProfile {
     /// The last answer's HTTP code, for the support report (never the BattleTag).
     var lastCode:Int? { queue.sync { record()?.code } }
 
+    /// What the card can show from a record (nil before a summary was read).
+    private static func card(_ record:Record)->CareerCard? {
+        guard record.seen else { return nil }
+        var page=URLComponents(string:"https://overwatch.blizzard.com/en-us/career/")!
+        page.path+=record.player+"/"
+        return CareerCard(identity:record.identity,ranks:record.ranks,season:record.season,last:record.last,
+                          hero:record.last?.hero.flatMap { record.heroes[$0] },page:page.url,totals:record.modes,heroes:record.heroes)
+    }
+    /// What the last look found for this BattleTag, without asking again (Settings' preview), and when it was.
+    /// `done` is called on the profile's queue.
+    func kept(tag:String,done:@escaping (Status,CareerCard?,Date?)->Void) {
+        queue.async {
+            guard let player=BattleTag.playerID(tag) else { done(.invalidTag,nil,nil);return }
+            guard let record=self.record(),record.player == player else { done(.none,nil,nil);return }
+            let card=Self.card(record)
+            if record.notPublic,let wait=record.waitUntil { done(.notPublic(until:wait),card,record.asked);return }
+            done(record.seen ? .found(card?.rank) : .none,card,record.asked)
+        }
+    }
     /// Looks the player up if it is time to, and tells what the card can show. `done` is called on the
     /// profile's queue.
     func lookUp(tag:String,now:Date=Date(),done:@escaping (Status,CareerCard?)->Void) {
@@ -311,13 +332,7 @@ final class CareerProfile {
             var record=self.record().flatMap { $0.player == player ? $0 : nil } ?? Record(player:player)
             // What was learned is kept before it is told.
             func finish(_ status:Status,_ card:CareerCard?) { self.save(record);done(status,card) }
-            func card()->CareerCard? {
-                guard record.seen else { return nil }
-                var page=URLComponents(string:"https://overwatch.blizzard.com/en-us/career/")!
-                page.path+=player+"/"
-                return CareerCard(identity:record.identity,ranks:record.ranks,season:record.season,last:record.last,
-                                  hero:record.last?.hero.flatMap { record.heroes[$0] },page:page.url,totals:record.modes,heroes:record.heroes)
-            }
+            func card()->CareerCard? { Self.card(record) }
             if let wait=record.waitUntil,now < wait { finish(record.notPublic ? .notPublic(until:wait) : .unavailable,card());return }
             if let asked=record.asked,now.timeIntervalSince(asked) < Self.fresh,!record.notPublic {
                 finish(record.seen ? .found(card()?.rank) : .unavailable,card());return
@@ -381,7 +396,10 @@ final class CareerProfile {
     func forget() { queue.async { self.store.removeObject(forKey:self.key);self.history.update { $0.forgetProfile() } } }
     /// What Recall remembers › Erase: the history and the profile both. The ranks and all-time records come
     /// back with the next look; the sessions don't.
-    func erase() { queue.async { self.store.removeObject(forKey:self.key);self.history.erase() } }
+    func erase() { queue.async { self.eraseNow() } }
+    /// The same at once, not after a look on its way (Recall quitting): the settings and the history's file are
+    /// both safe to change from any thread.
+    func eraseNow() { store.removeObject(forKey:key);history.erase() }
 
     private func record()->Record? { store.data(forKey:key).flatMap { try? JSONDecoder().decode(Record.self,from:$0) } }
     private func save(_ record:Record) { store.set(try? JSONEncoder().encode(record),forKey:key) }

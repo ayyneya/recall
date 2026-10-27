@@ -164,6 +164,32 @@ struct CareerHistory: Codable, Equatable {
     func peak(_ role:CareerRank.Role)->CareerRank? { seasonPeak.first { $0.role == role } }
 }
 
+extension CareerHistory {
+    /// What Recall remembers › Export: everything kept, as a spreadsheet (CSV, UTF-8 with its mark, so Numbers
+    /// and Excel both read Korean and Chinese). One row for each run of the game and each profile change, oldest
+    /// first, times as this Mac shows them.
+    func csv(heroes:[String:CareerHero],timeZone:TimeZone = .current)->String {
+        let format=DateFormatter();format.locale=Locale(identifier:"en_US_POSIX");format.timeZone=timeZone;format.dateFormat="yyyy-MM-dd HH:mm"
+        func tally(_ t:Tally)->String { t.played > 0 ? L("{0}–{1}",String(t.won),String(t.lost)) : "" }
+        // A hero's name comes from OverFast: one that starts as a formula would (=, +, -, @) stays text in a spreadsheet.
+        func name(_ text:String)->String { text.first.map { "=+-@".contains($0) } == true ? "'"+text : text }
+        var rows:[(at:Date,fields:[String])]=runs.map { run in
+            (run.end,[format.string(from:run.start),format.string(from:run.end),L("Played on this Mac"),run.matches.map(String.init) ?? "","","","","",""])
+        }
+        for change in changes {
+            let session=change.session
+            rows.append((change.at,["",format.string(from:change.at),L("Profile change"),String(session.played),tally(session.competitive),tally(session.quickplay),
+                                    session.hero.map { name(heroes[$0]?.name ?? $0) } ?? "",session.rank?.label() ?? "",change.rankSteps.map { $0 > 0 ? "+\($0)" : String($0) } ?? ""]))
+        }
+        // A field with a comma, a quote or a line break is quoted, its quotes doubled.
+        func field(_ text:String)->String {
+            text.contains(where:{ $0 == "," || $0 == "\"" || $0.isNewline }) ? "\"\(text.replacingOccurrences(of:"\"",with:"\"\""))\"" : text
+        }
+        let head=[L("Started"),L("Ended"),L("What"),L("Matches"),L("Competitive"),L("Quick Play"),L("Hero"),L("Rank"),L("Divisions")]
+        let lines=[head]+rows.sorted { $0.at < $1.at }.map(\.fields)
+        return "\u{FEFF}"+lines.map { $0.map(field).joined(separator:",") }.joined(separator:"\r\n")+"\r\n"
+    }
+}
 extension Tally {
     static func +(a:Tally,b:Tally)->Tally { Tally(played:a.played+b.played,won:a.won+b.won,lost:a.lost+b.lost) }
 }

@@ -1,0 +1,449 @@
+import SwiftUI
+import AppKit
+
+// The pieces Customize's panels are built from, as the design draws them: lists, choices, tiles, words, the
+// switch, and the click-or-hold every choice answers to (a click uses only this one; holding adds it to the
+// list, or takes it out, while a fill sweeps across it).
+
+enum HoldMode { case add,remove }
+
+extension View {
+    /// A click uses only this one; holding half a second adds it (or takes it out, `mode`), while a fill sweeps
+    /// across. With no mode, holding does nothing and a click still works.
+    func clickOrHold(_ mode:HoldMode?,radius:CGFloat=9,click:@escaping ()->Void,hold:@escaping ()->Void)->some View {
+        modifier(ClickOrHold(mode:mode,radius:radius,click:click,hold:hold))
+    }
+    /// Shows a change on the card while the pointer rests on this choice (after a moment, as in the design).
+    func pointing(_ studio:DiscordStudio,_ change:@escaping (inout DiscordCardDesign)->Void)->some View {
+        onHover { inside in if inside { studio.point(change) } else { studio.stopPointing() } }
+    }
+    /// The design's hover on a row: a faint veil.
+    func rowHover(_ radius:CGFloat,veil:Double=0.055,enabled:Bool=true)->some View { modifier(RowHover(radius:radius,veil:veil,enabled:enabled)) }
+}
+private struct RowHover: ViewModifier {
+    let radius:CGFloat
+    let veil:Double
+    let enabled:Bool
+    @State private var inside=false
+    func body(content:Content)->some View {
+        content.background { if inside && enabled { RoundedRectangle(cornerRadius:radius,style:.continuous).fill(DiscordColors.veil(veil)) } }
+            .onHover { inside=$0 }
+            .animation(.easeOut(duration:0.2),value:inside)
+    }
+}
+private struct ClickOrHold: ViewModifier {
+    let mode:HoldMode?
+    let radius:CGFloat
+    let click:()->Void
+    let hold:()->Void
+    @State private var pressed=false
+    @State private var held=false
+    @State private var moved=false
+    @State private var sweep=false
+    @State private var pop=false
+    @State private var timer:Task<Void,Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content:Content)->some View {
+        content
+            .overlay(alignment:.leading) {
+                GeometryReader { box in
+                    Rectangle().fill(mode == .remove ? DiscordColors.veil(0.13) : DiscordColors.accent.opacity(0.3))
+                        .frame(width:sweep ? box.size.width : 0)
+                }
+                .opacity(sweep ? 1 : 0)
+                .clipShape(RoundedRectangle(cornerRadius:radius,style:.continuous)).allowsHitTesting(false)
+            }
+            .scaleEffect(pop && !reduceMotion ? 1.05 : 1)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance:0).onChanged { value in
+                if !pressed { pressed=true;held=false;moved=false;start() }
+                if !moved && (abs(value.translation.width) > 8 || abs(value.translation.height) > 8) { moved=true;stop() }
+            }.onEnded { _ in
+                let clicked=pressed && !held && !moved
+                pressed=false;stop()
+                if clicked { click() }
+            })
+            // VoiceOver can't hold: the click is the button's own action, the hold one by name.
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { click() }
+            .accessibilityActions { if let mode { Button(mode == .remove ? L("Remove") : L("Add"),action:hold) } }
+    }
+    private func start() {
+        guard mode != nil else { return }
+        timer?.cancel()
+        timer=Task { @MainActor in
+            try? await Task.sleep(for:.milliseconds(90))
+            guard !Task.isCancelled else { return }
+            withAnimation(.linear(duration:0.43)) { sweep=true }
+            try? await Task.sleep(for:.milliseconds(430))
+            guard !Task.isCancelled else { return }
+            held=true;sweep=false
+            hold()
+            withAnimation(.timingCurve(0.22,1,0.36,1,duration:0.13)) { pop=true }
+            try? await Task.sleep(for:.milliseconds(130))
+            withAnimation(.timingCurve(0.22,1,0.36,1,duration:0.25)) { pop=false }
+        }
+    }
+    private func stop() { timer?.cancel();timer=nil;sweep=false }
+}
+
+/// A panel's title, what the part is, and (for a list that takes turns) how long each one stays.
+struct PanelHeading: View {
+    @Bindable var studio:DiscordStudio
+    let title:String
+    let subtitle:String
+    var turns=false
+    var body:some View {
+        VStack(alignment:.leading,spacing:0) {
+            HStack(spacing:8) {
+                Text(title).font(LauncherStyle.font(15,.bold)).foregroundStyle(DiscordColors.bright)
+                Spacer()
+                if turns { PaceButton(studio:studio) }
+            }.frame(height:30)
+            Text(subtitle).font(LauncherStyle.font(11.5)).lineHeight(1.45,size:11.5).foregroundStyle(DiscordColors.ink(0.45))
+                .frame(maxWidth:.infinity,minHeight:34,alignment:.topLeading).fixedSize(horizontal:false,vertical:true).padding(.top,-1)
+        }
+    }
+}
+/// "⟳ 45 s": how long each item stays; a click takes the next pace.
+struct PaceButton: View {
+    @Bindable var studio:DiscordStudio
+    @State private var inside=false
+    var body:some View {
+        Button { studio.nextPace() } label: {
+            HStack(spacing:6) {
+                DesignIcon("lucide:repeat",size:12)
+                Text(DiscordStudio.paceName(studio.design.pace)).monospacedDigit().foregroundStyle(DiscordColors.bright).frame(minWidth:36,alignment:.leading)
+                    .contentTransition(.numericText())
+            }
+            .font(LauncherStyle.font(11.5,.semibold)).foregroundStyle(DiscordColors.ink(inside ? 1 : 0.7))
+            .padding(.leading,9).padding(.trailing,10).frame(height:26)
+            .background(DiscordColors.veil(inside ? 0.09 : 0.05),in:RoundedRectangle(cornerRadius:8,style:.continuous))
+        }
+        .buttonStyle(.plain).onHover { inside=$0 }
+        .accessibilityLabel(L("Change how long each one stays"))
+        .animation(.snappy,value:studio.design.pace)
+    }
+}
+
+/// A box of the panel's own (a list, a notice).
+struct PanelBox<Content:View>: View {
+    var padding:CGFloat=4
+    var veil=0.03
+    var corners=RectangleCornerRadii(topLeading:13,bottomLeading:13,bottomTrailing:13,topTrailing:13)
+    @ViewBuilder var content:Content
+    var body:some View {
+        VStack(alignment:.leading,spacing:0) { content }.padding(padding).frame(maxWidth:.infinity,alignment:.leading)
+            .background(DiscordColors.veil(veil),in:UnevenRoundedRectangle(cornerRadii:corners,style:.continuous))
+    }
+}
+extension View {
+    /// A row of a list whose order changes by dragging, as the design's lists: the row moves as it's dragged over
+    /// the others (`dragging` is where it is now), and letting go ends it. Only the list's own rows count ("line:2"),
+    /// never text dragged in from elsewhere. A drag let go outside the list says nothing, so a tick with the mouse up
+    /// forgets it.
+    func reorderable<Preview:View>(_ list:String,index:Int,dragging:Binding<Int?>,tick:Date,move:@escaping (Int,Int)->Void,
+                                   @ViewBuilder preview:()->Preview)->some View {
+        draggable("\(list):\(index)") { preview().onAppear { dragging.wrappedValue=index } }
+            .dropDestination(for:String.self) { items,_ in
+                dragging.wrappedValue=nil
+                return items.first?.hasPrefix(list+":") == true
+            } isTargeted: { over in
+                guard over,let from=dragging.wrappedValue,from != index else { return }
+                withAnimation(.snappy) { move(from,index) }
+                dragging.wrappedValue=index
+            }
+            .onChange(of:tick) { if dragging.wrappedValue != nil && NSEvent.pressedMouseButtons & 1 == 0 { dragging.wrappedValue=nil } }
+    }
+}
+
+/// A numbered row in a part's list: its turn (glowing, with a ring that fills through the turn, while it's the
+/// one on the card), a picture or an icon, what it shows and what it is; a note, and ✕ to take it out.
+struct ListRow<Leading:View>: View {
+    let number:Int
+    let text:String
+    var sub:String?=nil
+    /// "Matches too": the line shows in a match as well (blue while the preview is in one).
+    var matchesToo:Bool?=nil
+    var note:(text:String,icon:String)?=nil
+    var live=false
+    var turnDone:Double=0
+    var selected=false
+    var available=true
+    var removable=false
+    var remove:()->Void={}
+    @ViewBuilder var leading:Leading
+    var body:some View {
+        HStack(spacing:9) {
+            ZStack {
+                if live {
+                    Circle().stroke(DiscordColors.accent.opacity(0.22),lineWidth:1.6)
+                    Circle().trim(from:0,to:turnDone).stroke(DiscordColors.accent,style:StrokeStyle(lineWidth:1.6,lineCap:.round)).rotationEffect(.degrees(-90))
+                        .animation(turnDone < 0.05 ? nil : .linear(duration:1),value:turnDone)
+                }
+                Text("\(number)").font(LauncherStyle.font(11,.bold)).monospacedDigit().foregroundStyle(live ? DiscordColors.accent : DiscordColors.ink(0.4))
+            }.frame(width:18,height:18)
+            leading.opacity(available ? 1 : 0.5)
+            VStack(alignment:.leading,spacing:0) {
+                Text(verbatim:text).font(.discord(14,selected ? 600 : 500)).lineLimit(1)
+                    .foregroundStyle(available ? (selected || live ? DiscordColors.bright : DiscordColors.ink(0.8)) : DiscordColors.ink(0.38))
+                if let sub {
+                    HStack(spacing:6) {
+                        Text(sub).font(LauncherStyle.font(11)).normalLines(size:11).foregroundStyle(DiscordColors.ink(0.45)).lineLimit(1)
+                        if let inMatch=matchesToo { MatchesTooChip(inMatch:inMatch) }
+                    }
+                }
+            }
+            Spacer(minLength:4)
+            if let note {
+                HStack(spacing:4) { DesignIcon(note.icon,size:11);Text(note.text) }.font(LauncherStyle.font(11)).foregroundStyle(DiscordColors.ink(0.42)).fixedSize()
+            }
+            if removable { RemoveButton(action:remove) }
+        }
+        .padding(EdgeInsets(top:5,leading:8,bottom:5,trailing:4)).frame(minHeight:38)
+        .contentShape(Rectangle())
+    }
+}
+/// "⚔ Matches too": the other lines are for the menus only.
+struct MatchesTooChip: View {
+    let inMatch:Bool
+    var body:some View {
+        HStack(spacing:3) { DesignIcon("ph:sword-fill",size:8.5);Text(L("Matches too")) }
+            .font(LauncherStyle.font(9.5,.bold))
+            .foregroundStyle(inMatch ? Color(red:150/255,green:195/255,blue:1) : DiscordColors.ink(0.55))
+            .padding(.leading,4).padding(.trailing,5).frame(height:16)
+            .background(inMatch ? Color(red:110/255,green:170/255,blue:1).opacity(0.18) : DiscordColors.veil(0.06),in:RoundedRectangle(cornerRadius:5,style:.continuous))
+            .fixedSize()
+            .designTip(L("Shows in matches too. The other lines are for the menus only."))
+            .animation(.easeOut(duration:0.25),value:inMatch)
+    }
+}
+struct RemoveButton: View {
+    let action:()->Void
+    @State private var inside=false
+    var body:some View {
+        Button(action:action) {
+            DesignIcon("lucide:x",size:13).foregroundStyle(inside ? DiscordColors.bright : DiscordColors.ink(0.32))
+                .frame(width:24,height:24).background(inside ? DiscordColors.veil(0.08) : .clear,in:RoundedRectangle(cornerRadius:7,style:.continuous))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).onHover { inside=$0 }.accessibilityLabel(L("Remove"))
+    }
+}
+/// A line's icon in the list: its topic's, on a quiet tile.
+struct RowIcon: View {
+    let icon:String
+    var body:some View {
+        DesignIcon(icon,size:12.5).foregroundStyle(DiscordColors.ink(0.7))
+            .frame(width:24,height:24).background(DiscordColors.veil(0.05),in:RoundedRectangle(cornerRadius:7,style:.continuous))
+    }
+}
+
+/// What a hold does, under a list.
+struct HoldHint: View {
+    let text:String
+    var body:some View {
+        HStack(spacing:7) {
+            DesignIcon("rc:hold",size:12).foregroundStyle(DiscordColors.accent)
+            Text(text).font(LauncherStyle.font(11)).normalLines(size:11).foregroundStyle(DiscordColors.ink(0.5))
+        }
+    }
+}
+
+/// A heading with a rule after it ("Add a line ———"), and maybe a button at its end.
+struct RuleHeading<Trailing:View>: View {
+    let text:String
+    @ViewBuilder var trailing:Trailing
+    var body:some View {
+        HStack(spacing:8) {
+            Text(text)
+            Rectangle().fill(DiscordColors.veil(0.07)).frame(height:1)
+            trailing
+        }
+        .font(LauncherStyle.font(11.5,.semibold)).foregroundStyle(DiscordColors.ink(0.5))
+        .padding(.top,16).padding(.bottom,4)
+    }
+}
+extension RuleHeading where Trailing == EmptyView {
+    init(text:String) { self.init(text:text) { EmptyView() } }
+}
+/// A text button in the design's link colour ("Done", "How to make it public").
+struct LinkButton: View {
+    let title:String
+    var size:CGFloat=12
+    let action:()->Void
+    @State private var inside=false
+    var body:some View {
+        Button(action:action) { Text(title).font(LauncherStyle.font(size,.semibold)).foregroundStyle(inside ? DiscordColors.bright : DiscordColors.link) }
+            .buttonStyle(.plain).onHover { inside=$0 }
+    }
+}
+
+/// A choice in a short list (Badge, Line 1, Timer, Buttons): a radio, or a pick that can be one of several
+/// (numbered then, with a ring filling through its turn while it's on the card).
+struct ChoiceRow<Trailing:View>: View {
+    enum Mark { case radio,pick,fixed }
+    let title:String
+    var sub:String?=nil
+    var on=false
+    var mark=Mark.radio
+    /// Picked as the list's nth, of several.
+    var number:Int?=nil
+    var live=false
+    var turnDone:Double=0
+    @ViewBuilder var trailing:Trailing
+    var body:some View {
+        HStack(spacing:11) {
+            markView.frame(width:18,height:18)
+            VStack(alignment:.leading,spacing:2) {
+                Text(title).font(LauncherStyle.font(12.5,.semibold)).foregroundStyle(mark == .fixed ? DiscordColors.ink(0.6) : on ? DiscordColors.bright : DiscordColors.ink(0.78))
+                if let sub { Text(sub).font(LauncherStyle.font(11)).normalLines(size:11).foregroundStyle(DiscordColors.ink(0.45)).fixedSize(horizontal:false,vertical:true) }
+            }
+            .frame(maxWidth:.infinity,alignment:.leading)
+            trailing
+        }
+        .padding(.horizontal,10).padding(.vertical,6).frame(minHeight:44)
+        .background(on && mark != .fixed ? DiscordColors.veil(0.055) : .clear,in:RoundedRectangle(cornerRadius:11,style:.continuous))
+        .rowHover(11,veil:0.06,enabled:mark != .fixed)
+        .contentShape(Rectangle())
+        .animation(.easeOut(duration:0.2),value:on)
+    }
+    @ViewBuilder private var markView:some View {
+        switch mark {
+        case .fixed:
+            Circle().strokeBorder(DiscordColors.veil(0.18),lineWidth:1.5).overlay { Circle().fill(DiscordColors.veil(0.35)).frame(width:7,height:7) }.frame(width:16,height:16)
+        case .radio:
+            Circle().strokeBorder(on ? DiscordColors.accent : DiscordColors.veil(0.25),lineWidth:1.5)
+                .overlay { if on { Circle().fill(DiscordColors.accent).frame(width:7,height:7) } }.frame(width:16,height:16)
+        case .pick:
+            ZStack {
+                Circle().fill(on ? DiscordColors.accent : .clear)
+                if !on { Circle().strokeBorder(DiscordColors.veil(0.25),lineWidth:1.5) }
+                if on {
+                    if let number { Text("\(number)").font(LauncherStyle.font(10.5,.heavy)).monospacedDigit() } else { DesignIcon("lucide:check",size:11) }
+                }
+                if live {
+                    Circle().stroke(DiscordColors.accent.opacity(0.22),lineWidth:1.6).frame(width:23,height:23)
+                    Circle().trim(from:0,to:turnDone).stroke(DiscordColors.accent,style:StrokeStyle(lineWidth:1.6,lineCap:.round)).rotationEffect(.degrees(-90)).frame(width:23,height:23)
+                        .animation(turnDone < 0.05 ? nil : .linear(duration:1),value:turnDone)
+                }
+            }.foregroundStyle(Color(red:28/255,green:28/255,blue:32/255))
+        }
+    }
+}
+
+/// A row of words in a pill, one chosen ("Competitive  Quick Play  Both").
+struct WordPicker<Value:Hashable>: View {
+    let choices:[(Value,String)]
+    let chosen:Value
+    let choose:(Value)->Void
+    var body:some View {
+        HStack(spacing:2) {
+            ForEach(choices,id:\.0) { value,label in
+                let on=value == chosen
+                Button { choose(value) } label: {
+                    Text(label).font(LauncherStyle.font(12,on ? .semibold : .medium)).lineLimit(1)
+                        .foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.58))
+                        .padding(.horizontal,10).frame(height:26)
+                        .background(on ? DiscordColors.veil(0.14) : .clear,in:RoundedRectangle(cornerRadius:7,style:.continuous))
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(2).background(DiscordColors.veil(0.05),in:RoundedRectangle(cornerRadius:9,style:.continuous))
+        .animation(.easeOut(duration:0.2),value:chosen)
+    }
+}
+/// The design's switch: a small track that fills orange, and its label.
+struct DesignSwitch: View {
+    let label:String
+    let on:Bool
+    let toggle:()->Void
+    var body:some View {
+        Button(action:toggle) {
+            HStack(spacing:7) {
+                Capsule().fill(on ? DiscordColors.accent : DiscordColors.veil(0.16)).frame(width:28,height:16)
+                    .overlay(alignment:.leading) { Circle().fill(.white).frame(width:12,height:12).shadow(color:.black.opacity(0.3),radius:1,y:1).offset(x:on ? 14 : 2) }
+                Text(label).font(LauncherStyle.font(12,.semibold)).foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.6))
+            }.frame(height:30).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).accessibilityAddTraits(on ? .isSelected : [])
+        .animation(.timingCurve(0.22,1,0.36,1,duration:0.3),value:on)
+    }
+}
+
+/// Which rank every rank line and the badge show: the player's roles, the highest, or the last one played.
+struct RankTiles: View {
+    @Bindable var studio:DiscordStudio
+    var body:some View {
+        let inputs=studio.inputs(at:Date())
+        LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:5),count:4),spacing:5) {
+            ForEach(studio.rankChoices(inputs),id:\.choice) { tile in
+                RankTile(tile:tile,on:studio.design.rank == tile.choice)
+                    .onTapGesture { if studio.design.rank != tile.choice { studio.edit { $0.rank=tile.choice } } }
+                    .pointing(studio) { $0.rank=tile.choice }
+            }
+        }
+    }
+}
+struct RankTileInfo { let choice:RankChoice;let label:String;let sub:String;let icon:String;let emblem:URL? }
+private struct RankTile: View {
+    let tile:RankTileInfo
+    let on:Bool
+    @State private var inside=false
+    var body:some View {
+        VStack(spacing:3) {
+            RemoteImage(url:tile.emblem,fill:false) { DesignIcon("ph:medal-fill",size:24).foregroundStyle(DiscordColors.ink(0.3)) }
+                .frame(width:32,height:32)
+                .overlay(alignment:.bottomTrailing) {
+                    DesignIcon(tile.icon,size:10).foregroundStyle(DiscordColors.ink(0.9))
+                        .frame(width:17,height:17).background(Color(red:52/255,green:53/255,blue:58/255),in:Circle())
+                        .overlay { Circle().strokeBorder(DiscordColors.stage,lineWidth:2).padding(-2) }
+                        .offset(x:6,y:4)
+                }
+                .padding(.bottom,2)
+            Text(tile.label).font(LauncherStyle.font(12,.semibold)).foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.78)).lineLimit(1)
+            Text(tile.sub).font(LauncherStyle.font(10.5)).normalLines(size:10.5).foregroundStyle(DiscordColors.ink(0.5)).lineLimit(1)
+        }
+        .padding(.top,9).padding(.bottom,8).padding(.horizontal,2).frame(maxWidth:.infinity)
+        .background(on ? DiscordColors.accent.opacity(0.1) : DiscordColors.veil(0.035),in:RoundedRectangle(cornerRadius:11,style:.continuous))
+        .overlay { if on { RoundedRectangle(cornerRadius:11,style:.continuous).strokeBorder(DiscordColors.accent.opacity(0.7),lineWidth:1.5) } }
+        .brightness(inside ? 0.06 : 0)
+        .contentShape(Rectangle()).onHover { inside=$0 }
+        .animation(.easeOut(duration:0.2),value:on)
+    }
+}
+
+extension DiscordStudio {
+    /// "45 s", "2 min".
+    static func paceName(_ seconds:Int)->String { seconds < 60 ? L("{0} s",String(seconds)) : L("{0} min",String(seconds/60)) }
+    /// The rank tiles: each role the player has a rank in (every role without a profile), the highest, the last played.
+    func rankChoices(_ inputs:CardInputs)->[RankTileInfo] {
+        let ranks=inputs.allRanks.map(\.rank),roles=ranks.isEmpty ? CareerRank.Role.allCases : ranks.map(\.role)
+        var tiles=roles.map { role in
+            let rank=ranks.first { $0.role == role }
+            return RankTileInfo(choice:.role(role),label:role.label,sub:rank?.name ?? L("No rank"),icon:role.icon,emblem:rank?.icon)
+        }
+        tiles.append(RankTileInfo(choice:.highest,label:L("Highest"),sub:L("Your best"),icon:"rc:crown-fill",emblem:inputs.rank(.highest)?.icon))
+        tiles.append(RankTileInfo(choice:.lastPlayed,label:L("Last played"),sub:L("Follows you"),icon:"ph:clock-fill",emblem:inputs.rank(.lastPlayed)?.icon))
+        return tiles
+    }
+}
+extension CareerRank.Role {
+    var label:String {
+        switch self {
+        case .tank: return L("Tank",context:"role")
+        case .damage: return L("Damage",context:"role")
+        case .support: return L("Support",context:"role")
+        case .open: return L("6v6",context:"role")
+        }
+    }
+    /// The design's icon for the role.
+    var icon:String {
+        switch self {
+        case .tank: return "rc:shield-fill"
+        case .damage: return "ph:sword-fill"
+        case .support: return "rc:plus-fill"
+        case .open: return "ph:users-three-fill"
+        }
+    }
+}

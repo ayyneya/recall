@@ -20,23 +20,28 @@ enum DiscordPresenceLevel: String, CaseIterable, Identifiable {
     /// Recall badge. Everything comes from this Mac.
     case live
     /// Adds the competitive rank and how the last session went, from the player's public career
-    /// profile through OverFast (CareerProfile.swift). Live until a BattleTag is entered.
+    /// profile through OverFast (CareerProfile.swift): the Default card (DiscordCardTemplate.swift).
+    /// Live until a BattleTag is entered.
     case full
+    /// The player's own card, made in Customize (DiscordStudio.swift).
+    case custom
     var id:String { rawValue }
     static let standard=DiscordPresenceLevel.live
     var title:String {
         switch self {
-        case .normal: return L("Normal")
+        case .normal: return L("Basic")
         case .live: return L("Live")
         case .full: return L("Full")
+        case .custom: return L("Customize")
         }
     }
-    /// Settings › General's line under the choice.
+    /// Settings › Discord's line under the choice.
     var detail:String {
         switch self {
-        case .normal: return L("Shows Overwatch and how long you’ve played, as it does for players on a PC.")
-        case .live: return L("Also shows whether you’re in the menus or in a match, a timer for the match, and a small {0} badge. It’s read on this Mac, and only your Discord app receives it.",Brand.name)
-        case .full: return L("Also shows your competitive rank and how your last session went, from your public career profile.")
+        case .normal: return L("Overwatch and how long you’ve played, as on a PC.")
+        case .live: return L("Adds menus or match, a match timer and the Mac badge.")
+        case .full: return L("Adds your rank and how your last session went.")
+        case .custom: return L("Your own card, part by part.")
         }
     }
 }
@@ -308,6 +313,10 @@ struct PresenceTexts: Equatable {
     var voice:String
     /// The hover text of the small Recall badge.
     var badge:String
+    /// The words in the app's language. The badge names the Mac with Apple's logo, which Discord shows as text.
+    static var app:PresenceTexts {
+        PresenceTexts(menu:L("In Menus"),match:L("In Match"),voice:L("In Group Voice"),badge:L("Playing on Mac with {0}",Brand.name).replacingOccurrences(of:"Mac",with:"\u{F8FF}Mac"))
+    }
 }
 
 enum PresenceCard {
@@ -405,6 +414,16 @@ final class DiscordIPC {
     var connected:Bool { lock.lock();defer { lock.unlock() };return connectedFlag }
     /// Whether Discord took the last card sent (it answers each one, with an error when it refuses it).
     var accepted:Bool { lock.lock();defer { lock.unlock() };return acceptedFlag }
+    private var avatarURL:URL?
+    /// The player's picture on Discord, as Discord told it when Recall connected (Settings' preview shows it).
+    var avatar:URL? { lock.lock();defer { lock.unlock() };return avatarURL }
+    /// Discord's address for a user's picture; nil for one without (Discord then shows its default). The id is
+    /// digits and the hash letters, digits and "_" ("a_…" for a moving picture), nothing else.
+    static func avatar(_ user:[String:Any]?)->URL? {
+        func plain(_ text:String,_ allowed:(Character)->Bool)->Bool { !text.isEmpty && text.allSatisfy { $0.isASCII && allowed($0) } }
+        guard let id=user?["id"] as? String,plain(id,\.isNumber),let hash=user?["avatar"] as? String,plain(hash,{ $0.isLetter || $0.isNumber || $0 == "_" }) else { return nil }
+        return URL(string:"https://cdn.discordapp.com/avatars/\(id)/\(hash).png?size=128")
+    }
     /// How many times the sockets were looked for, for the tests.
     var attempts:Int { queue.sync { tries } }
 
@@ -504,7 +523,8 @@ final class DiscordIPC {
                 guard let message=try? JSONSerialization.jsonObject(with:frame.body) as? [String:Any] else { break }
                 if message["evt"] as? String == "READY" {
                     handshakeTimeout?.cancel();ready=true;pending=true
-                    lock.lock();connectedFlag=true;lock.unlock()
+                    let user=(message["data"] as? [String:Any])?["user"] as? [String:Any]
+                    lock.lock();connectedFlag=true;avatarURL=Self.avatar(user);lock.unlock()
                     flush()
                 } else if message["cmd"] as? String == "SET_ACTIVITY" {
                     let taken=message["evt"] as? String != "ERROR"
@@ -693,6 +713,7 @@ final class DiscordPresence {
     /// Full: the profile, the BattleTag's name, the design (Default), and what Recall remembers.
     private var career:CareerCard?
     private var tagName:String?
+    /// The player's own card, for Custom (Full's is Default).
     private var design=DiscordCardDesign.standard
     private let history:CareerHistoryStore
     /// The next refresh: a team channel becoming a match, or the card's next turn.
@@ -702,6 +723,8 @@ final class DiscordPresence {
     }
     /// Whether Discord has answered, and whether it took the last card (for the support report).
     var connected:Bool { ipc.connected }
+    /// The player's picture on Discord, once Recall has connected to it.
+    var avatar:URL? { ipc.avatar }
     var accepted:Bool { ipc.accepted }
     /// When a process started, from the system's own record. macOS gives no launch date for Overwatch's
     /// app (it is started by Wine, not by the Finder), and the timer on the card counts from the start.
@@ -724,15 +747,20 @@ final class DiscordPresence {
     /// wasn't read: Normal). Called on the presence's queue; the career profile keeps the run in its history
     /// and counts the matches toward the next session it tells.
     var sessionEnded:((PlayedRun)->Void)?
-    /// The game closed: the card comes down.
-    func end() {
+    /// What the game is doing (where the player is, the group's voice, the matches so far, when it opened),
+    /// for Settings' preview to follow; nil once it closed. Called on the presence's queue, when it changes.
+    var gameChanged:((_ live:(place:PresenceState,voice:GroupVoice?,matches:Int,launched:Date)?)->Void)?
+    private var told:String?
+    /// The game closed: the card comes down. `ran` is false when it comes down while the game goes on (turned
+    /// off in Settings): the run isn't over, and goes into the history when it is.
+    func end(ran:Bool=true) {
         // All in one step on the queue, Discord's included, so a begin from another thread comes
         // wholly before or wholly after (the connection's queue never waits for this one).
         queue.sync {
             guard running else { return }
             let now=Date()
-            sessionEnded?(PlayedRun(start:launched,end:now,matches:tail == nil ? nil : tracker.matches(at:now)))
-            running=false
+            if ran { sessionEnded?(PlayedRun(start:launched,end:now,matches:tail == nil ? nil : tracker.matches(at:now))) }
+            running=false;told=nil;gameChanged?(nil)
             tail?.stop();tail=nil
             promotion?.cancel();promotion=nil
             shown=nil
@@ -744,9 +772,13 @@ final class DiscordPresence {
     func update(career:CareerCard?,tagName:String?) {
         queue.async { self.career=career;self.tagName=tagName;self.refresh() }
     }
+    /// The card in use changed in Customize.
+    func update(design:DiscordCardDesign) {
+        queue.async { self.design=design;self.refresh() }
+    }
     func update(level:DiscordPresenceLevel,texts:PresenceTexts) {
         queue.async {
-            // Live and Full both read the log; only Normal doesn't.
+            // Every level but Normal reads the log.
             let changed=(level == .normal) != (self.level == .normal)
             self.level=level;self.texts=texts
             if changed && self.running { self.followLog() }
@@ -770,11 +802,14 @@ final class DiscordPresence {
         guard running else { return }
         let now=Date()
         let facts=PresenceFacts(place:tracker.state(at:now),voice:tracker.groupVoice)
+        let matches=tracker.matches(at:now),key="\(facts.place) \(String(describing:facts.voice)) \(matches)"
+        if key != told { told=key;gameChanged?((facts.place,facts.voice,matches,launched)) }
         var wait=tracker.nextChange(at:now)
         let card:[String:Any]
-        if level == .full {
+        if level == .full || level == .custom {
+            let design=level == .full ? DiscordCardDesign.standard : self.design
             let inputs=CardInputs(place:facts.place,voice:facts.voice,competitive:facts.competitive,profile:career,history:history.current,tagName:tagName,
-                                  launched:launched,matches:tracker.matches(at:now),now:now,texts:texts)
+                                  launched:launched,matches:matches,now:now,texts:texts)
             card=design.activity(inputs)
             // The card's lists take their next turn: one update then (Discord takes one every few seconds at most).
             if let turn=design.nextTurn(inputs)?.timeIntervalSince(now) { wait=min(wait ?? turn,turn) }

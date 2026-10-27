@@ -239,6 +239,13 @@ import Foundation
         precondition(DiscordCardShelf.load(store).inUse == mine && !mine.readyMade && mine.shownName == "Late nights")
         mine.name="Other";shelf.chosen="gone"
         precondition(shelf.inUse == .standard)
+        // Cards kept by another Recall still read: what one didn't have takes its default (no second button is no
+        // key at all), and a card with a part this Recall doesn't know is left out, not all of them.
+        let kept=#"{"chosen":"x","mine":[{"id":"y","name":"Odd","lineTwo":[{"piece":{"nonsense":{}}}]},{"id":"x","name":"Old","pace":120}]}"#
+        let read=try! JSONDecoder().decode(DiscordCardShelf.self,from:Data(kept.utf8))
+        precondition(read.chosen == "x" && read.hidden.isEmpty && read.mine.count == 1,"\(read)")
+        precondition(read.mine[0].name == "Old" && read.mine[0].pace == 120 && read.mine[0].button == nil && read.mine[0].lineTwo == DiscordCardDesign.standard.lineTwo
+                     && read.mine[0].rank == DiscordCardDesign.standard.rank,"\(read.mine[0])")
         // Discord's limit on a hover text: 128 characters.
         var long=profile();long.identity?.title=String(repeating:"Shieldbreaker ",count:12)
         var icon=DiscordCardDesign.standard;icon.pictures=[.playerIcon]

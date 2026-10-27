@@ -189,8 +189,8 @@ again with the region chosen. Help shows the topics for every player and those f
 player's region (`HelpTopic.regions`, `AppModel.currentRegion`: NetEase sign-in and account
 on China's Battle.net; Xbox sign-in on Global and Korea; the Korean account's risk on Korea;
 how to choose Korea on Global), and setup's sign-in note follows the region. Discord is blocked in mainland China, so
-players who choose China's Battle.net see `GitHubHelpLink` where the Discord card is
-(`AppModel.showsDiscord`). The worker finds Battle.net and Overwatch in other folders under Program Files
+players who choose China's Battle.net see `GitHubHelpLink` where the Discord invite is, and no Discord tab in
+Settings (`AppModel.showsDiscord`). The worker finds Battle.net and Overwatch in other folders under Program Files
 too, and support reports name the region, languages, default browser and whether NetEase's
 anti-cheat is present.
 
@@ -258,12 +258,21 @@ swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Localizati
 swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Localization.swift app/Sources/DisplayOptions.swift \
   tests/DisplayOptionsTests.swift -o runtime/phase-3/display-options-tests
 runtime/phase-3/display-options-tests   # from the repository root
-swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Localization.swift app/Sources/Brand.swift \
-  app/Sources/DiscordPresence.swift tests/DiscordPresenceTests.swift -o runtime/phase-3/discord-presence-tests
+swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Brand.swift app/Sources/Localization.swift \
+  app/Sources/DiscordPresence.swift app/Sources/CareerProfile.swift app/Sources/CareerHistory.swift \
+  app/Sources/DiscordCardTemplate.swift app/Sources/DiscordCardCatalog.swift tests/DiscordPresenceTests.swift \
+  -o runtime/phase-3/discord-presence-tests
 runtime/phase-3/discord-presence-tests
 swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Brand.swift app/Sources/Localization.swift \
-  app/Sources/DiscordPresence.swift app/Sources/CareerProfile.swift tests/CareerProfileTests.swift -o runtime/phase-3/career-profile-tests
+  app/Sources/DiscordPresence.swift app/Sources/CareerProfile.swift app/Sources/CareerHistory.swift \
+  app/Sources/DiscordCardTemplate.swift app/Sources/DiscordCardCatalog.swift tests/CareerProfileTests.swift \
+  -o runtime/phase-3/career-profile-tests
 runtime/phase-3/career-profile-tests
+swiftc -O -target arm64-apple-macos26.5 -parse-as-library app/Sources/Brand.swift app/Sources/Localization.swift \
+  app/Sources/DiscordPresence.swift app/Sources/CareerProfile.swift app/Sources/CareerHistory.swift \
+  app/Sources/DiscordCardTemplate.swift app/Sources/DiscordCardCatalog.swift app/Sources/DiscordCardCode.swift \
+  tests/DiscordCardTests.swift -o runtime/phase-3/discord-card-tests
+runtime/phase-3/discord-card-tests
 ```
 
 Native process execution: `scripts/portable_setup.m`, with scoped session and
@@ -362,15 +371,16 @@ matter, by file and line. Crash dumps never go in. The support report names the 
 from schema 5 whether Game Mode is on.
 `tests/LogBundleTests.swift` and `tests/test_session_logs.py` cover them.
 
-Discord (`DiscordPresence.swift`; Settings › General) tells the player's Discord app what they are playing.
+Discord (`DiscordPresence.swift`; Settings › Discord) tells the player's Discord app what they are playing.
 Discord on a Mac finds games by their Mac executable, and Overwatch is listed only as the Windows
 `overwatch.exe`, so it never sees the game run under Wine. Recall connects to the local socket every
 Discord client listens on (`discord-ipc-0` to `-9` in the temporary folder; no account, no sign-in, no
 network) and sets one card under Blizzard's own Overwatch listing (`Brand.discordApplicationID`), which
 reads "Playing Overwatch" with Overwatch's icon and the time since the game opened, as it does for a PC
-player. The setting is a level, not a switch (games have none, and Discord's Activity Privacy hides
-the card): Normal is that card; Live, the default, adds In Menus or In Match, the match's own timer
-and a small Recall badge (the app icon, which Discord loads from the repository). The card follows
+player. How much it says is a level: Basic is that card; Live, the default, adds In Menus or In Match, the
+match's own timer and a small Recall badge (the app icon, which Discord loads from the repository); Full and
+Customize are below. A power button on the tab's stage turns the card off altogether (`AppModel.presencePower`):
+no log read, no Discord connection, no lookup; Discord's own Activity Privacy hides it too. The card follows
 the game: it goes up when macOS reports Overwatch's own app (`org.overwatch2mac.overwatch`,
 `scripts/game_mode_app.py`) opening, or when the running screen finds the game running, and comes
 down when it quits (a process dispatch source on the game's own process says when). Live follows Overwatch.log, a file the game keeps for itself, with a file-system
@@ -399,10 +409,14 @@ party's id is random, made when the game joins that voice chat (nothing derived 
 short number any hash of which is easily reversed, leaves the Mac). Nothing reads the game's memory, screen or network traffic.
 Without voice chat's Auto-Join the log says nothing about where the player is, and the card then
 only says that the game runs. China's Battle.net never starts it (Discord is
-blocked there). Support can turn it off: `defaults write org.overwatch2mac.launcher discordPresence
--bool false`, which, like the region, is looked at again each time the status is read. The card waits
-for that first read, when the region is known. The support report names the level, whether Discord
-answered and whether it took the last card (Discord answers each one; schema 6).
+blocked there). The power button is the setting support turns it off with: `defaults write
+org.overwatch2mac.launcher discordPresence -bool false`, which, like the region, is looked at again each time
+the status is read. The card waits for that first read, when the region is known. Turned off while the game
+runs, the card comes down but the run goes on: it goes into the history when the game ends, if the card is
+back by then (turning it on again reads the log from the start, so nothing is counted twice). The support
+report names the level, whether Discord answered and whether it took the last card (Discord answers each
+one; schema 6), and from schema 8 the power and the card in use (a ready-made one's id, or `own`) with how
+many of the player's own cards there are, never their names or what they show.
 `tests/DiscordPresenceTests.swift` covers the socket protocol, the log lines, the tracking and the
 whole path against a fake Discord.
 
@@ -420,29 +434,55 @@ beaten, and a rank that moved (in the same season). The log adds what the profil
 the game reports its matches (`PresenceTracker.matches`, each counted once as a line shows it held), and
 the matches since the totals were taken, less the profile's, are the ones in other modes (Arcade, custom
 games); a session the log wasn't read in makes that unknown until the next totals. It asks at most once
-in ten minutes (OverFast's cache time), as the game opens and once when a BattleTag is entered, never
-again before a wait OverFast gave (its not-found `next_check_at`, about 90 minutes, or a 429/503's
-Retry-After), and a 500 or no answer waits for the next opening.
-On the card, line 2 holds one thing, the first there is: the group's voice ("In Group Voice (2 of 6)");
-in the menus at Full, a rank that moved ("⬆️ Tank: up to Emerald 1"), then a record beaten ("🏅 New best: 46 eliminations
-in a game"), then the session ("🎮 Comp 2–1 · QP 1–0 · 1 other", short because Discord cuts the line at
-about 30 characters). At Full line 1 starts with the player's name in the game ("pyxee · In Menus"). In
-the menus the rank (the last session's competitive role, or the best) takes the badge's place, with this
-season's ranks in its hover text on one line, since Discord drops line breaks there ("🛡️ Tank: Emerald 1 ·
-👥 6v6: Emerald 1 · Playing on Mac with Recall", the career page's fourth row being 6v6), and the large
-picture is the hero played longest in the last session, with the session's totals on all heroes ("Most
-played last session: Ana · All heroes: 38 eliminations, 9 deaths, 14,032 healing"), or the player's icon
-with their name and title. None of the profile shows in a match, where the log can't tell Competitive from
-Quick Play or Arcade (a rank there would read as Competitive, a hero's picture as the hero being played);
-a "Career Profile" button to the player's career page shows throughout (others see Discord's buttons).
-The card is made from `PresenceFacts` alone (where the player is, the group's voice, the match's number,
-the profile, and whether the match is competitive, which nothing can tell yet), so another source, such
-as reading the screen behind its own switch, adds facts there: a known competitive match puts the rank
-on it. The support report (schema 7)
-says whether a BattleTag is set and OverFast's last answer code, never the tag.
+in ten minutes (OverFast's cache time): as the game opens, twelve minutes after it quits (Blizzard's update has
+come by then, so the next game's card has the session from the start), when a BattleTag is entered and on Your
+profile's Look again; never again before a wait OverFast gave (its not-found `next_check_at`, about 90 minutes,
+or a 429/503's Retry-After), and a 500 or no answer waits for the next opening.
+The card is a design (`DiscordCardTemplate.swift`, its words in `DiscordCardCatalog.swift`): Line 1, Line 2,
+the large picture and the small badge each hold a list, and a list of more than one takes turns, all on one
+clock (the turn is the time over the design's pace, 20 seconds to 5 minutes, counted round each list's items
+that have something to say now), so the same moment always makes the same card and a Recall that restarts
+carries on where it was; the next update is at the next turn. Full shows the Default design. Line 1 is the
+player's name in the game and where they are ("pyxee · In Menus"). Line 2 is Highlights, the first that
+applies of: something that just happened, shown once, the first time the player plays after it (a rank that
+moved, "Tank ↑ Emerald 1"; a new best, "★ New best: 53 elims"; a season high, a hero's milestone, a comeback, a
+new season); the last session ("Last · Comp 2–1 · 1 other", short because Discord cuts the line at about 30
+characters); the first look's all-time record; tonight's matches. The picture comes with the line (the last
+session's hero, the rank's role main, a hero line's hero, otherwise the player's icon). In the menus the badge
+is the rank (the last session's role, with this season's ranks in its hover text on one line, since Discord
+drops line breaks there), hidden once matches were played after a look more than two days old. A Career
+Profile button follows Get Recall (Discord shows buttons to everyone but the player). None of the profile
+shows in a match, where the log can't tell Competitive from Quick Play or Arcade (a rank there would read as
+Competitive, a hero's picture as the hero being played): only lines that say nothing about the match can stay
+(`CardPiece.safeInMatch`), the picture is Overwatch's and the badge the Mac's. The card is made from
+`CardInputs` alone (where the player is, the group's voice, the match's number, the profile, the history, and
+whether the match is competitive, which nothing can tell yet), so another source, such as reading the screen
+behind its own switch, adds facts there: a known competitive match puts the rank on it. The support report
+(schema 7) says whether a BattleTag is set and OverFast's last answer code, never the tag.
 `tests/CareerProfileTests.swift` covers the BattleTag, OverFast's answers, the last session with the
-log's match count, every lookup rule against a fake OverFast that counts requests, and the card's lines
-and pictures in each place.
+log's match count, every lookup rule against a fake OverFast that counts requests, the history, its periods
+and its export; `tests/DiscordCardTests.swift` each piece's words, Full's card in the menus, in a match and in
+the group's voice, the lists taking turns, the ready-made designs, cards kept by another Recall, and the codes.
+
+Settings › Discord (`DiscordSettings.swift`, its state in `DiscordStudio.swift`) is the Claude Design artifact
+"Discord card" (v40) made 1:1: the card on Discord's own profile pop-out, the level, the BattleTag and What
+Recall remembers. Customize (`DiscordEditor*.swift`) changes the player's own card part by part, on the same
+stage, which only changes height as the page changes (the title and tabs fold into a breadcrumb); pointing at
+a choice shows it on the card before it is made, every change applies at once (one that takes something away,
+such as removing a line or deleting a card, can be undone), and a ready-made design is never changed itself
+(the first change saves a copy). My cards (`DiscordGallery.swift`)
+plays each card sped up, and shares one as a code that is the card itself (`DiscordCardCode.swift`: nothing is
+stored anywhere). The cards are kept in the settings (`discordCards`); one kept by another Recall still reads,
+missing parts taking today's defaults and a card with a part this Recall doesn't know left out. Your profile
+and What Recall remembers (`DiscordPages.swift`) show everything the profile gives and where it shows on the
+card, and the sessions kept: holding Erase for two seconds erases them, with ten seconds to undo (closing Settings
+or quitting Recall erases at once, `AppModel.quitting`), and Export
+writes them to Downloads as a spreadsheet (`CareerHistory.csv`). The preview follows the game while it runs
+(`DiscordPresence.gameChanged`), and shows the player's own Discord picture, which Discord gives when Recall
+connects (kept in `discordAvatar`). The design's own look (`DiscordDesign.swift`): its colours, its icons drawn
+from their SVG (Lucide, Phosphor, Material Design Icons, Google's Material Icons, Simple Icons;
+licenses/DESIGN-ICONS-NOTICE.txt), Noto Sans for Discord's text (bundled, SIL Open Font License), and the
+browser's line heights, since SwiftUI rounds a line of the system font a point taller at some sizes.
 
 The running screen learns the session's processes from `ow2-setup session` (when the window
 becomes active, or from Settings) and asks macOS to report when each one ends (a process

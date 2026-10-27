@@ -86,7 +86,7 @@ final class AppDelegate: NSObject { @objc func forceQuit() {} }
         }
         for (upscaling,sharpening,expected) in [("YES","off","on"),("YES","high","on"),("NO","off","off"),("NO","low","off")] {
             let fields=try report(upscaling,sharpening)
-            precondition(fields["schema"] as? Int == 7)
+            precondition(fields["schema"] as? Int == 8)
             // Game Mode (REC-51, REC-55): on unless the player turned it off.
             precondition(fields["game_mode"] as? String == "on","\(fields)")
             // The mouse (REC-52, REC-57): Standard unless the player chose another, with Input
@@ -96,6 +96,8 @@ final class AppDelegate: NSObject { @objc func forceQuit() {} }
             // Discord (DiscordPresence.swift, schema 6): Live unless the player chose otherwise, and no Discord talked to here.
             let discord=fields["discord_presence"] as? [String:Any]
             precondition(discord?["level"] as? String == "live" && discord?["connected"] as? Bool == false && discord?["accepted"] as? Bool == false && discord?["allowed"] is Bool,"\(String(describing:discord))")
+            // Schema 8: the card's switch on, Default in use and none of the player's own (their names are never in it).
+            precondition(discord?["power"] as? String == "on" && discord?["card"] as? String == "default" && discord?["own_cards"] as? Int == 0,"\(String(describing:discord))")
             // The career profile (Full): no BattleTag here, and OverFast never asked; the tag itself is never in the report.
             let profile=discord?["career_profile"] as? [String:Any]
             precondition(profile?["battletag_set"] as? Bool == false && profile?["last_code"] as? String == "none","\(String(describing:profile))")

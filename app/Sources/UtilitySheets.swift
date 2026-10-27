@@ -2,13 +2,15 @@ import SwiftUI
 import AppKit
 
 /// Settings' categories, in tabs across the top: everyday choices first, rarely needed ones in
-/// Advanced. Settings reopens on the tab shown last (AppModel.settingsTab).
+/// Advanced. Settings reopens on the tab shown last (AppModel.settingsTab). Discord, the card friends
+/// see (DiscordSettings.swift), isn't there where Discord is blocked (AppModel.showsDiscord).
 enum SettingsTab:String, CaseIterable, Identifiable {
-    case general, display, graphics, audio, advanced
+    case general, discord, display, graphics, audio, advanced
     var id:String { rawValue }
     var title:String {
         switch self {
         case .general: return L("General")
+        case .discord: return L("Discord")
         case .display: return L("Display")
         case .graphics: return L("Graphics")
         case .audio: return L("Audio")
@@ -18,12 +20,15 @@ enum SettingsTab:String, CaseIterable, Identifiable {
     var symbol:String {
         switch self {
         case .general: return "gearshape"
+        case .discord: return "ic:baseline-discord"
         case .display: return "display"
         case .graphics: return "cube"
         case .audio: return "speaker.wave.2"
         case .advanced: return "gearshape.2"
         }
     }
+    /// Discord's tab shows its mark in Discord's own blue.
+    var tint:Color? { self == .discord ? Color(red:120/255,green:132/255,blue:1) : nil }
 }
 // Updates, the display setting the app owns, what Battle.net and Overwatch start with, and
 // recovery actions, in tabs. Driver tuning is deliberately absent: FPS, quality and
@@ -40,9 +45,6 @@ struct SettingsSheet:View {
     /// Logging: the setting waiting for the FPS warning's Turn On, and Custom's text being typed.
     @State private var confirmLogging:LoggingSetting?
     @State private var customDraft:String?
-    /// The BattleTag as typed (Full), kept once Return is pressed or the field is left.
-    @State private var tagDraft:String?
-    @FocusState private var tagFocused:Bool
     /// Shader memory's slider: how many of the shader cache's parts Overwatch loads.
     @State private var shaderParts=1.0
     /// Follows System Settings: the main display can change while Settings is open.
@@ -52,31 +54,43 @@ struct SettingsSheet:View {
     /// And Input Monitoring, for the high-precision mouse, which explains itself before it's chosen.
     @State private var inputMonitoring=InputMonitoring.access
     @State private var explainHighPrecision=false
+    /// The tab shown: Discord's only where Discord can be used.
+    private var tab:SettingsTab { model.settingsTab == .discord && !model.showsDiscord ? .general : model.settingsTab }
     var body:some View {
-        VStack(spacing:16) {
-            LauncherHeading(title:L("Settings"),subtitle:"",compact:true)
-            LauncherTabs(tabs:SettingsTab.allCases,selection:$model.settingsTab,title:\.title,symbol:\.symbol)
-            // One size on every tab, so the tabs, Done and Uninstall never move. The page sits
-            // under the tabs; a page (or a page and a notice) taller than the room scrolls.
-            ScrollView {
-                VStack(spacing:12) {
-                    page
-                    if !model.notice.isEmpty { LauncherNotice(text:model.notice) }
+        let studio=model.discordStudio
+        // Customize and Discord's two pages take the whole sheet: the title and tabs fold away, and a
+        // breadcrumb leads back (DiscordTab).
+        let folded=tab == .discord && studio.screen != .home
+        DesignTipLayer(tips:studio.tips) {
+            VStack(spacing:0) {
+                VStack(spacing:14) {
+                    LauncherHeading(title:L("Settings"),subtitle:"",compact:true).frame(height:34)
+                    LauncherTabs(tabs:SettingsTab.allCases.filter { $0 != .discord || model.showsDiscord },selection:$model.settingsTab,width:72,spacing:4,
+                                 title:\.title,symbol:\.symbol,tint:\.tint)
                 }
-            }.scrollBounceBehavior(.basedOnSize).frame(maxHeight:.infinity,alignment:.top)
-            HStack {
-                // Uninstall lives here, always visible and apart from the
-                // everyday settings; it opens its own confirmation.
-                Button(role:.destructive) { model.sheet = .uninstall } label: {
-                    Label(L("Uninstall {0}…",Brand.name),systemImage:"trash").font(LauncherStyle.font(13,.medium))
-                }.buttonStyle(.borderless).foregroundStyle(.red).disabled(model.uninstall == .working)
-                    .help(L("Move {0}, Battle.net and Overwatch to the Trash",Brand.name))
-                Spacer()
-                Button(L("Done")) { dismiss() }.buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.large).keyboardShortcut(.cancelAction)
+                .frame(height:folded ? 0 : 102,alignment:.top).clipped().allowsHitTesting(!folded)
+                if tab == .discord {
+                    DiscordTab(studio:studio) { footer }
+                } else {
+                    // One size on every tab, so the tabs, Done and Uninstall never move. The page sits
+                    // under the tabs; a page (or a page and a notice) taller than the room scrolls.
+                    ScrollView {
+                        VStack(spacing:12) {
+                            page
+                            if !model.notice.isEmpty { LauncherNotice(text:model.notice) }
+                        }
+                    }.scrollBounceBehavior(.basedOnSize).frame(maxHeight:.infinity,alignment:.top).padding(.top,14)
+                    footer.padding(.top,16)
+                }
             }
-        }.font(LauncherStyle.font(14)).padding(.horizontal,32).padding(.vertical,28)
+            .padding(.top,22).padding(.horizontal,28).padding(.bottom,20)
+            .animation(.timingCurve(0.22,1,0.36,1,duration:0.52),value:folded)
+        }
+        .font(LauncherStyle.font(14))
             .frame(width:LauncherStyle.sheetWidth,height:LauncherStyle.largeSheetHeight)
             .tint(.primary).background { LauncherBackground() }
+            // Settings opens on Discord's own tab next time, not inside Customize; an erase waiting to be undone happens now.
+            .onDisappear { model.discordStudio.closePage() }
             .onReceive(NotificationCenter.default.publisher(for:NSApplication.didChangeScreenParametersNotification)) { _ in
                 main=MainDisplay.current
                 model.refreshDisplay()
@@ -116,14 +130,25 @@ struct SettingsSheet:View {
                 Button(L("Clear"),role:.destructive,action:model.deleteShaders)
             } message: { Text(clearShaderCacheMessage) }
     }
+    /// Uninstall lives here, always visible and apart from the everyday settings; it opens its own confirmation.
+    private var footer:some View {
+        HStack {
+            Button(role:.destructive) { model.sheet = .uninstall } label: {
+                Label(L("Uninstall {0}…",Brand.name),systemImage:"trash").font(LauncherStyle.font(13,.medium))
+            }.buttonStyle(.borderless).foregroundStyle(.red).disabled(model.uninstall == .working)
+                .help(L("Move {0}, Battle.net and Overwatch to the Trash",Brand.name))
+            Spacer()
+            Button(L("Done")) { dismiss() }.buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.large).keyboardShortcut(.cancelAction)
+        }.frame(height:30)
+    }
     @ViewBuilder private var page:some View {
-        switch model.settingsTab {
+        switch tab {
         case .general:
             updates
             battleNet
             mouse
             if model.otherInstallation != nil { otherInstallation }
-            if model.showsDiscord { discord }
+        case .discord: EmptyView()
         case .display:
             display
             resetDisplay
@@ -265,67 +290,6 @@ struct SettingsSheet:View {
                 }
                 if let running=model.running { closeFirst(running,several:false) }
             }
-        }
-    }
-    /// What Discord shows while Overwatch runs (DiscordPresence.swift). Always on: the player's own
-    /// Discord decides whether anyone sees it, so there is only how much it says.
-    private var discord:some View {
-        LauncherPanel(inset:16) {
-            VStack(alignment:.leading,spacing:10) {
-                HStack(alignment:.center,spacing:12) {
-                    VStack(alignment:.leading,spacing:2) {
-                        Text(L("Discord")).font(LauncherStyle.font(14,.semibold))
-                        Text(L("What your profile shows while you play Overwatch.")).font(LauncherStyle.font(12))
-                            .foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
-                    }
-                    Spacer(minLength:12)
-                    LauncherSegmented(options:DiscordPresenceLevel.allCases,selection:$model.discordPresenceLevel,title:\.title)
-                }
-                Text(model.discordPresenceLevel.detail).font(LauncherStyle.font(12)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
-                if model.discordPresenceLevel == .full { careerProfile }
-                Text(L("To hide it, turn off activity sharing in Discord: User Settings › Activity Privacy.")).font(LauncherStyle.font(12))
-                    .foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
-            }
-        }
-    }
-    /// Full: the BattleTag, what the last lookup found, and where the BattleTag goes (CareerProfile.swift).
-    private var careerProfile:some View {
-        VStack(alignment:.leading,spacing:6) {
-            HStack(spacing:8) {
-                Text(L("BattleTag")).font(LauncherStyle.font(13,.medium))
-                TextField(L("BattleTag"),text:Binding(get:{ tagDraft ?? model.battleTag },set:{ tagDraft=$0 }),prompt:Text(verbatim:"Name#1234"))
-                    .textFieldStyle(.roundedBorder).frame(maxWidth:200).focused($tagFocused).accessibilityLabel(L("BattleTag"))
-                    .onSubmit(commitTag).onChange(of:tagFocused) { _,focused in if !focused { commitTag() } }
-                    // Done closes Settings with the field still in focus: what was typed is kept then too.
-                    .onDisappear(perform:commitTag)
-            }
-            if let line=careerLine {
-                Text(line.text).font(LauncherStyle.font(12)).foregroundStyle(line.problem ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-                    .fixedSize(horizontal:false,vertical:true)
-            }
-            Text(L("Recall asks OverFast (overfast-api.tekrop.fr), an open-source service that reads public career profiles, for yours as Overwatch opens. Only your BattleTag is sent, and OverFast keeps the profiles it looks up."))
-                .font(LauncherStyle.font(12)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
-        }.padding(.top,2)
-    }
-    private func commitTag() {
-        guard let draft=tagDraft else { return }
-        tagDraft=nil;model.commitBattleTag(draft)
-    }
-    /// The line under the BattleTag: what the last lookup found, or what to do.
-    private var careerLine:(text:String,problem:Bool)? {
-        if (tagDraft ?? model.battleTag).trimmingCharacters(in:.whitespaces).isEmpty {
-            return (L("Enter your BattleTag to show your rank. Your career profile must be public."),false)
-        }
-        switch model.careerStatus {
-        case .none: return nil
-        case .looking: return (L("Looking up your career profile…"),false)
-        case .found(let rank?): return (L("Found your profile: {0}.",rank.label()),false)
-        case .found(nil): return (L("Found your profile. It shows no competitive rank this season."),false)
-        case .notPublic(let until):
-            return (L("Your career profile isn’t public, or OverFast hasn’t seen it yet. In Overwatch: Options › Social › Career Profile Visibility › Public, then quit Overwatch. Recall looks again after {0}.",
-                      until.formatted(date:.omitted,time:.shortened)),true)
-        case .invalidTag: return (L("That isn’t a BattleTag. Use the form Name#1234."),true)
-        case .unavailable: return (L("OverFast didn’t answer. Recall looks again the next time Overwatch opens."),false)
         }
     }
     /// Overwatch's own Video settings are where players usually change resolution; Recall

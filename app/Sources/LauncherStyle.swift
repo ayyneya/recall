@@ -173,20 +173,27 @@ struct LauncherTabs<Tab:Hashable & Identifiable>: View {
     let tabs:[Tab]
     @Binding var selection:Tab
     var width:CGFloat=78
+    var spacing:CGFloat=6
     /// Off while Help shows search results, which come from more than one tab.
     var showsSelection=true
     let title:(Tab)->String
+    /// An SF Symbol, or one of the design's icons, whose names have a colon ("ic:baseline-discord").
     let symbol:(Tab)->String
+    /// The chosen tab's icon colour when it isn't the accent (Discord's own blue).
+    var tint:(Tab)->Color?={ _ in nil }
     @Environment(\.colorScheme) private var scheme
     var body:some View {
-        HStack(spacing:6) {
+        HStack(spacing:spacing) {
             ForEach(tabs) { tab in
                 let selected=showsSelection && selection == tab
                 let shape=RoundedRectangle(cornerRadius:14,style:.continuous)
                 Button { selection=tab } label: {
                     VStack(spacing:5) {
-                        Image(systemName:symbol(tab)).font(.system(size:17,weight:.medium)).frame(height:21)
-                            .foregroundStyle(selected ? AnyShapeStyle(LauncherStyle.accent) : AnyShapeStyle(.secondary))
+                        Group {
+                            if symbol(tab).contains(":") { DesignIcon(symbol(tab),size:18) }
+                            else { Image(systemName:symbol(tab)).font(.system(size:17,weight:.medium)) }
+                        }.frame(height:21)
+                            .foregroundStyle(selected ? AnyShapeStyle(tint(tab) ?? LauncherStyle.accent) : AnyShapeStyle(.secondary))
                         Text(title(tab)).font(LauncherStyle.font(12,selected ? .semibold : .medium))
                             .foregroundStyle(selected ? .primary : .secondary)
                     }.frame(width:width,height:54)
@@ -198,37 +205,6 @@ struct LauncherTabs<Tab:Hashable & Identifiable>: View {
                 }.buttonStyle(.plain).accessibilityLabel(title(tab)).accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
-    }
-}
-/// A few choices in one capsule, as a Mac's segmented control: the chosen one is marked by a
-/// highlight that slides to the next when another is chosen (Settings › General › Discord).
-struct LauncherSegmented<Option:Hashable & Identifiable>: View {
-    let options:[Option]
-    @Binding var selection:Option
-    let title:(Option)->String
-    @Namespace private var highlight
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    var body:some View {
-        HStack(spacing:2) {
-            ForEach(options) { option in
-                let selected=selection == option
-                Button {
-                    withAnimation(reduceMotion ? nil : .spring(response:0.32,dampingFraction:0.82)) { selection=option }
-                } label: {
-                    Text(title(option)).font(LauncherStyle.font(13,selected ? .semibold : .medium))
-                        .foregroundStyle(selected ? Color.primary : Color.secondary)
-                        .padding(.horizontal,16).frame(minWidth:64,minHeight:26)
-                        .background {
-                            if selected {
-                                Capsule().fill(scheme == .dark ? Color.white.opacity(0.18) : Color.white)
-                                    .shadow(color:.black.opacity(scheme == .dark ? 0 : 0.14),radius:2,y:1)
-                                    .matchedGeometryEffect(id:"highlight",in:highlight)
-                            }
-                        }.contentShape(Capsule())
-                }.buttonStyle(.plain).accessibilityLabel(title(option)).accessibilityAddTraits(selected ? .isSelected : [])
-            }
-        }.padding(3).background(Capsule().fill(Color.primary.opacity(0.08))).fixedSize().accessibilityElement(children:.contain)
     }
 }
 extension View {

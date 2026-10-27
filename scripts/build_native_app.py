@@ -31,8 +31,10 @@ COPYRIGHT='Independent community project. Not affiliated with or endorsed by Bli
 # holds the translations of the app's strings (Localizable) and of these Info.plist strings.
 LOCALIZATIONS=ROOT/'app/Resources/Localizations'
 INFO_STRINGS={'NSMicrophoneUsageDescription':MICROPHONE_USAGE,'NSHumanReadableCopyright':COPYRIGHT}
-# LogsReadme.md: Save Logs' guide for engineers and AI assistants (LogBundle.swift).
-RESOURCES=('MosaicLogo.png','LinkedInMark.png','AuthorPhoto.jpg','Wordmark.png','WordmarkDark.png','LogsReadme.md')
+# LogsReadme.md: Save Logs' guide for engineers and AI assistants (LogBundle.swift). NotoSans-*.woff2: the font
+# Settings › Discord shows Discord's text in (DiscordDesign.swift; SIL Open Font License, licenses/NOTO-SANS-OFL.txt).
+RESOURCES=('MosaicLogo.png','LinkedInMark.png','AuthorPhoto.jpg','Wordmark.png','WordmarkDark.png','LogsReadme.md',
+           'NotoSans-Latin.woff2','NotoSans-LatinExt.woff2')
 def run(*args):subprocess.run([str(a) for a in args],check=True)
 def localize(resources):
     """English (the strings in the code), then each translation as <language>.lproj with
@@ -118,6 +120,8 @@ def build(output,workspace,runtime_archive,icon=None,identity=None,preview=False
     shutil.copy2(ROOT/'licenses/PROJECT-NOTICE',resources/'NOTICE.txt')
     shutil.copy2(ROOT/'licenses/GITHUB-MARK-NOTICE.txt',resources/'GITHUB-MARK-NOTICE.txt')
     shutil.copy2(ROOT/'licenses/PROJECT-LINKS-NOTICE.txt',resources/'PROJECT-LINKS-NOTICE.txt')
+    shutil.copy2(ROOT/'licenses/NOTO-SANS-OFL.txt',resources/'NOTO-SANS-OFL.txt')
+    shutil.copy2(ROOT/'licenses/DESIGN-ICONS-NOTICE.txt',resources/'DESIGN-ICONS-NOTICE.txt')
     for name in RESOURCES:
         shutil.copy2(ROOT/'app/Resources'/name,resources/name)
     languages=localize(resources)

@@ -121,6 +121,14 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         _ = bad.feed(Data([1,0,0,0,0,0,0,0x7f]))
         precondition(bad.broken)
         precondition(DiscordFrame.encode(1,["a":Date()]) == nil)
+        // READY's user: the picture's address, from the id and the hash only.
+        precondition(DiscordIPC.avatar(["id":"80351110224678912","avatar":"a_8342729096ea3675442027381ff50dfe"])?.absoluteString
+                     == "https://cdn.discordapp.com/avatars/80351110224678912/a_8342729096ea3675442027381ff50dfe.png?size=128")
+        for odd:[String:Any] in [["id":"80351110224678912"],["id":"80351110224678912","avatar":NSNull()],["id":"","avatar":"abc"],
+                                 ["id":"803511","avatar":""],["id":"8035/../1","avatar":"abc"],["id":"٨٠٣","avatar":"abc"],["id":"803511","avatar":"ab?c"]] {
+            precondition(DiscordIPC.avatar(odd) == nil)
+        }
+        precondition(DiscordIPC.avatar(nil) == nil)
     }
 
     static func parsing() {
@@ -367,7 +375,7 @@ func details(_ card:Any??)->String? { ((card ?? nil) as? [String:Any])?["details
         precondition(JSONSerialization.isValidJSONObject(match))
         // Discord wants two characters at least in a line, and no more than 128.
         precondition((2...128).contains((menu["details"] as! String).count) && (2...128).contains((match["details"] as! String).count) && (2...128).contains((group["state"] as! String).count))
-        precondition(DiscordPresenceLevel.allCases == [.normal,.live,.full] && DiscordPresenceLevel(rawValue:"gone") == nil && DiscordPresenceLevel.standard == .live)
+        precondition(DiscordPresenceLevel.allCases == [.normal,.live,.full,.custom] && DiscordPresenceLevel(rawValue:"gone") == nil && DiscordPresenceLevel.standard == .live)
     }
 
     static func socketPlaces() {

@@ -22,6 +22,12 @@ func L(_ english: String, _ values: String...) -> String {
     return result+rest
 }
 
+/// The same English with another meaning ("Support" is Help's tab, and a role in the game): `context` tells the
+/// two apart for translators ("Support (role)" is the key), and the English shows as it is.
+func L(_ english:String,context:String)->String {
+    Bundle.main.localizedString(forKey:"\(english) (\(context))",value:english,table:nil)
+}
+
 /// Whole sentences, one after another: a space between them in English and Korean, none in
 /// Chinese (the pattern "{0} {1}" is translated like any other text). Empty parts are left out.
 func sentences(_ parts:String...) -> String {

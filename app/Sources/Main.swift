@@ -159,6 +159,7 @@ import Darwin
         show();model.reopen(openingBattleNet:reopening);return false
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool { false }
+    func applicationWillTerminate(_ notification:Notification) { model.quitting() }
     func applicationShouldTerminate(_ sender:NSApplication)->NSApplication.TerminateReply {
         if model.quitsNow { return .terminateNow }
         if !model.canCancel { show();model.notice=L("Finishing the current step. You can quit as soon as it completes.");return .terminateCancel }

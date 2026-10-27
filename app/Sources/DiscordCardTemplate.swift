@@ -99,7 +99,7 @@ struct DiscordCardDesign: Codable, Equatable, Identifiable {
     func turn(at now:Date)->Int { Int(now.timeIntervalSince1970)/max(pace,Self.shortestPace) }
     /// When the next turn starts, if anything would change then (some list has more than one item to show).
     func nextTurn(_ inputs:CardInputs)->Date? {
-        let shown=Shown(self,inputs)
+        let shown=Shown(self,inputs,turn:turn(at:inputs.now))
         // The top heroes take turns within their one picture.
         let heroes=inputs.menus && inputs.topHeroes.count > 1 && (pictures ?? [(shown.lineTwo.first?.piece ?? .highlights).picture(inputs,rank:rank)]).contains(.topHeroes)
         guard shown.lineOne.count > 1 || shown.lineTwo.count > 1 || shown.pictures.count > 1 || shown.badges.count > 1 || heroes else { return nil }
@@ -107,9 +107,10 @@ struct DiscordCardDesign: Codable, Equatable, Identifiable {
         return Date(timeIntervalSince1970:TimeInterval((turn(at:inputs.now)+1)*pace))
     }
 
-    /// The card Discord gets (its SET_ACTIVITY activity), at Full and Custom.
-    func activity(_ inputs:CardInputs)->[String:Any] {
-        let shown=Shown(self,inputs),turn=turn(at:inputs.now)
+    /// The card Discord gets (its SET_ACTIVITY activity), at Full and Custom. Customize's preview can hold it
+    /// at a turn of its own (the item the player clicked).
+    func activity(_ inputs:CardInputs,turn held:Int?=nil)->[String:Any] {
+        let turn=held ?? turn(at:inputs.now),shown=Shown(self,inputs,turn:turn)
         func pick<T>(_ list:[T])->T? { list.isEmpty ? nil : list[turn%list.count] }
         var start=inputs.launched
         if timer == .match,case .match(let since)=inputs.place { start=since }
@@ -157,7 +158,7 @@ struct DiscordCardDesign: Codable, Equatable, Identifiable {
         var lineTwo:[(piece:CardPiece,text:String)]
         var pictures:[CardImage]
         var badges:[CardBadge]
-        init(_ design:DiscordCardDesign,_ inputs:CardInputs) {
+        init(_ design:DiscordCardDesign,_ inputs:CardInputs,turn:Int) {
             lineOne=design.lineOne.isEmpty ? [nil] : design.lineOne.map { inputs.lineOne($0,rank:design.rank) }
             lineTwo=design.lineTwo.compactMap { line in
                 if inputs.inMatch && (!line.inMatch || !line.piece.safeInMatch) { return nil }
@@ -165,7 +166,7 @@ struct DiscordCardDesign: Codable, Equatable, Identifiable {
                 let second=line.second.flatMap { inputs.inMatch && !$0.safeInMatch ? nil : $0.text(inputs,rank:design.rank) }
                 return (line.piece,second.map { text+" · "+$0 } ?? text)
             }
-            pictures=inputs.menus ? (design.pictures ?? []).compactMap { $0.image(inputs,rank:design.rank,turn:design.turn(at:inputs.now)) } : []
+            pictures=inputs.menus ? (design.pictures ?? []).compactMap { $0.image(inputs,rank:design.rank,turn:turn) } : []
             // The rank in the badge's place: in the menus, or in a match known to be competitive.
             let rankBadge=inputs.rank(design.rank) != nil && (inputs.menus || inputs.competitive == true)
             badges=design.badges.filter { $0 != .rank || rankBadge }
@@ -178,10 +179,44 @@ struct DiscordCardDesign: Codable, Equatable, Identifiable {
 struct DiscordCardShelf: Codable, Equatable {
     var chosen="default"
     var mine:[DiscordCardDesign]=[]
+    /// Ready-made cards the player deleted from My cards (Bring back shows them again).
+    var hidden:[String]=[]
     var all:[DiscordCardDesign] { DiscordCardDesign.readyMade+mine }
     var inUse:DiscordCardDesign { all.first { $0.id == chosen } ?? .standard }
     static func load(_ store:UserDefaults = .standard)->DiscordCardShelf {
         store.data(forKey:"discordCards").flatMap { try? JSONDecoder().decode(Self.self,from:$0) } ?? DiscordCardShelf()
     }
     func save(_ store:UserDefaults = .standard) { store.set(try? JSONEncoder().encode(self),forKey:"discordCards") }
+}
+// Cards kept by an earlier or later Recall still read: what a card didn't have yet takes today's default, and a
+// card this Recall can't read at all (a part it doesn't know) is left out rather than losing all of them.
+extension DiscordCardShelf {
+    init(from decoder:Decoder) throws {
+        let kept=try decoder.container(keyedBy:CodingKeys.self)
+        self.init()
+        chosen=try kept.decodeIfPresent(String.self,forKey:.chosen) ?? chosen
+        mine=(try? kept.decodeIfPresent([Readable<DiscordCardDesign>].self,forKey:.mine))?.compactMap(\.value) ?? []
+        hidden=(try? kept.decodeIfPresent([String].self,forKey:.hidden)) ?? []
+    }
+}
+extension DiscordCardDesign {
+    init(from decoder:Decoder) throws {
+        let kept=try decoder.container(keyedBy:CodingKeys.self)
+        self.init(id:try kept.decode(String.self,forKey:.id),name:try kept.decodeIfPresent(String.self,forKey:.name) ?? "")
+        lineOne=try kept.decodeIfPresent([LineOne].self,forKey:.lineOne) ?? lineOne
+        lineTwo=try kept.decodeIfPresent([CardLine].self,forKey:.lineTwo) ?? lineTwo
+        pictures=try kept.decodeIfPresent([CardPicture].self,forKey:.pictures)
+        badges=try kept.decodeIfPresent([CardBadge].self,forKey:.badges) ?? badges
+        timer=try kept.decodeIfPresent(CardTimer.self,forKey:.timer) ?? timer
+        // No second button is kept as no key at all (as nil pictures are).
+        button=try kept.decodeIfPresent(SecondButton.self,forKey:.button)
+        party=try kept.decodeIfPresent(PartyChoice.self,forKey:.party) ?? party
+        pace=try kept.decodeIfPresent(Int.self,forKey:.pace) ?? pace
+        rank=try kept.decodeIfPresent(RankChoice.self,forKey:.rank) ?? rank
+    }
+}
+/// One item of a list read on its own: nil when it can't be, so the rest of the list still reads.
+private struct Readable<Value:Decodable>: Decodable {
+    let value:Value?
+    init(from decoder:Decoder) throws { value=try? Value(from:decoder) }
 }

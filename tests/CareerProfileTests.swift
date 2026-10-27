@@ -69,14 +69,14 @@ final class FakeOverFast {
         let read=OverFast.summary(summary(updated:1_792_941_113,support:("champion",3)))!
         precondition(read.updated == 1_792_941_113 && read.season == 25 && read.ranks.map(\.role) == [.tank,.support,.open])
         precondition(read.ranks[0] == CareerRank(role:.tank,division:"emerald",tier:1,icon:URL(string:"https://static.playoverwatch.com/rank/emerald.png")!))
-        precondition(read.identity == CareerIdentity(name:"Player",title:"Shieldbreaker",endorsement:4,avatar:URL(string:"https://x/avatar.png")))
+        precondition(read.identity == CareerIdentity(name:"Player",title:"Shieldbreaker",endorsement:4,avatar:URL(string:"https://x/avatar.png"),namecard:URL(string:"https://x/card.png")))
         // A profile with no competitive rank, or a rank whose icon isn't https, shows none.
         precondition(OverFast.summary(json(["competitive":NSNull(),"last_updated_at":5]))!.ranks.isEmpty)
         var plain=try! JSONSerialization.jsonObject(with:summary(updated:5)) as! [String:Any]
         var competitive=plain["competitive"] as! [String:Any],pc=competitive["pc"] as! [String:Any],tank=pc["tank"] as! [String:Any]
-        tank["rank_icon"]="http://example.com/rank.png";pc["tank"]=tank;competitive["pc"]=pc;plain["competitive"]=competitive;plain["avatar"]="http://x/a.png"
+        tank["rank_icon"]="http://example.com/rank.png";pc["tank"]=tank;competitive["pc"]=pc;plain["competitive"]=competitive;plain["avatar"]="http://x/a.png";plain["namecard"]="http://x/c.png"
         let insecure=OverFast.summary(json(plain))!
-        precondition(insecure.ranks.map(\.role) == [.open] && insecure.identity?.avatar == nil)
+        precondition(insecure.ranks.map(\.role) == [.open] && insecure.identity?.avatar == nil && insecure.identity?.namecard == nil)
         precondition(OverFast.summary(json(["error":"Player not found"])) == nil && OverFast.summary(Data("<html>".utf8)) == nil)
         // The whole profile: each mode's totals, records and heroes' time.
         let modes=OverFast.profile(wholeProfile(competitive:Mode(played:98,won:45,lost:52,elims:1760,deaths:588,damage:739031,healing:594755,bests:["eliminations_most_in_game":46],heroes:["ana":10615,"juno":12822]),
@@ -238,6 +238,10 @@ final class FakeOverFast {
         fake.answers["/players/Other-5678"]=fake.ok(wholeProfile(competitive:Mode(played:1,won:1),quickplay:Mode(played:1,won:1)))
         (status,card)=look(profile,"Other#5678",at(235))
         precondition(fake.requests.count == 16 && card?.last == nil,"the totals are taken now, there being none before")
+        // Erased as Recall quits: the profile and the history go at once, without waiting on the profile's queue.
+        precondition(store.object(forKey:"careerProfile") != nil && profile.history.current != CareerHistory())
+        profile.eraseNow()
+        precondition(store.object(forKey:"careerProfile") == nil && profile.history.current == CareerHistory())
     }
 
     static func history() {
@@ -320,6 +324,22 @@ final class FakeOverFast {
         precondition(other.changes.isEmpty && other.seasonPeak.isEmpty && other.looked == nil && other.runs.count == 1)
         other.ran(PlayedRun(start:day(1,20).addingTimeInterval(CareerHistory.kept+3600),end:day(1,21).addingTimeInterval(CareerHistory.kept+3600),matches:1))
         precondition(other.runs.count == 1)
+        // Export: everything kept, oldest first, a run's times and matches, a change's games, hero, rank and divisions.
+        var export=CareerHistory()
+        var moved=change(day(27,22),comp:Tally(played:3,won:2,lost:1),quick:Tally(played:2,won:1,lost:1),other:1)
+        moved.session.hero="ana";moved.session.rank=rank(.support,"gold",1);moved.rankSteps=2
+        export.changes=[moved]
+        export.ran(PlayedRun(start:day(27,20),end:day(27,21.5),matches:5));export.ran(PlayedRun(start:day(28,20),end:day(28,21),matches:nil))
+        let csv=export.csv(heroes:["ana":CareerHero(name:"Ana, \"the\" sniper",portrait:nil,role:.support)],timeZone:calendar.timeZone)
+        precondition(csv.hasPrefix("\u{FEFF}") && csv.hasSuffix("\r\n"))
+        let rows=csv.dropFirst().split(separator:"\r\n").map(String.init)
+        precondition(rows == ["Started,Ended,What,Matches,Competitive,Quick Play,Hero,Rank,Divisions",
+                              "2026-10-27 20:00,2026-10-27 21:30,Played on this Mac,5,,,,,",
+                              ",2026-10-27 22:00,Profile change,6,2–1,1–1,\"Ana, \"\"the\"\" sniper\",Support: Gold 1,+2",
+                              "2026-10-28 20:00,2026-10-28 21:00,Played on this Mac,,,,,,"],"\(rows)")
+        // A name that a spreadsheet would work out as a formula is kept as text.
+        let formula=export.csv(heroes:["ana":CareerHero(name:"=HYPERLINK(\"x\")",portrait:nil,role:.support)],timeZone:calendar.timeZone)
+        precondition(formula.contains(",\"'=HYPERLINK(\"\"x\"\")\",Support: Gold 1,"),formula)
     }
 
     static func historyStore() {

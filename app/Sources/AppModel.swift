@@ -21,29 +21,31 @@ final class AppModel {
     var autoOpenBattleNet=UserDefaults.standard.object(forKey:"autoOpenBattleNet") as? Bool ?? true {
         didSet { UserDefaults.standard.set(autoOpenBattleNet,forKey:"autoOpenBattleNet") }
     }
-    /// What Discord shows while Overwatch runs (DiscordPresence.swift): Normal is the game and a timer,
-    /// as for a PC player; Live adds menus or match and the Recall badge. There is no off switch:
-    /// games have none, and Discord's own Activity Privacy hides it. Support can turn it off:
-    ///   defaults write org.overwatch2mac.launcher discordPresence -bool false
+    /// What Discord shows while Overwatch runs (DiscordPresence.swift): Basic is the game and a timer, as for a
+    /// PC player; Live adds menus or match and the Mac badge; Full adds the career profile (the Default card);
+    /// Custom is the player's own card. All of it is chosen in Settings › Discord (DiscordStudio.swift), whose
+    /// power button turns the card off (presencePower). Discord's own Activity Privacy hides it too.
     var discordPresenceLevel=AppModel.storedPresenceLevel {
         didSet {
             UserDefaults.standard.set(discordPresenceLevel.rawValue,forKey:"discordPresenceLevel")
-            discordPresence.update(level:discordPresenceLevel,texts:Self.presenceTexts())
+            discordPresence.update(level:discordPresenceLevel,texts:PresenceTexts.app)
+            if discordStudio.level != discordPresenceLevel { discordStudio.level=discordPresenceLevel }
             checkPresence()
-            // Full chosen while the game runs: the profile, if it's time to look (CareerProfile keeps the pace).
-            if discordPresenceLevel == .full && presencePid != nil { lookUpCareer() }
+            // Full or Custom chosen while the game runs: the profile, if it's time to look (CareerProfile keeps the pace).
+            if usesProfile && presencePid != nil { lookUpCareer() }
         }
     }
-    /// Full: the player's BattleTag ("Name#1234"), typed once in Settings › General › Discord (Battle.net
-    /// keeps it in no file Recall could read). OverFast gets it, and nothing else (CareerProfile.swift).
+    /// Full and Custom read the career profile.
+    private var usesProfile:Bool { discordPresenceLevel == .full || discordPresenceLevel == .custom }
+    /// Full and Custom: the player's BattleTag ("Name#1234"), typed once in Settings › Discord › Your profile
+    /// (Battle.net keeps it in no file Recall could read). OverFast gets it, and nothing else (CareerProfile.swift).
     var battleTag=UserDefaults.standard.string(forKey:"battleTag") ?? ""
-    /// What the last lookup found, for Settings' line under the BattleTag.
-    var careerStatus=CareerProfile.Status.none
     @ObservationIgnored private let career=CareerProfile(base:AppModel.storedServer ?? OverFast.standard,history:AppModel.careerHistory)
     /// What Recall remembers (CareerHistory.swift): the profile writes it, the card reads it.
     nonisolated private static let careerHistory=CareerHistoryStore(url:CareerHistoryStore.standardURL)
-    /// Settings › Discord: the OverFast the profile is looked up on; empty is the public one. One that isn't
-    /// usable (OverFast.server) is not saved.
+    /// The OverFast the profile is looked up on; empty is the public one. One that isn't usable (OverFast.server)
+    /// is not saved. Settings has no field for it: support sets it with
+    ///   defaults write org.overwatch2mac.launcher overFastServer https://…
     var overFastServer=UserDefaults.standard.string(forKey:"overFastServer") ?? ""
     func commitServer(_ text:String)->Bool {
         let text=text.trimmingCharacters(in:.whitespaces)
@@ -58,48 +60,128 @@ final class AppModel {
     func eraseCareerHistory() {
         career.erase()
         discordPresence.update(career:nil,tagName:tagName)
+        refreshStudio()
     }
-    /// Settings: a BattleTag entered (Return, or the field left). It is kept and looked up once; an
-    /// empty one forgets the profile and takes the rank off the card.
+    /// Recall is quitting: an erase still waiting to be undone happens now, before Recall goes.
+    func quitting() {
+        guard discordStudio.erased != nil else { return }
+        discordStudio.eraseTimer?.cancel()
+        career.eraseNow()
+    }
+    /// Your profile › Look up: a BattleTag entered. It is kept and looked up once; an empty one (Remove) forgets
+    /// the profile and takes the rank off the card.
     func commitBattleTag(_ text:String) {
         let tag=text.trimmingCharacters(in:.whitespaces)
-        guard tag != battleTag else { return }
+        guard tag != battleTag else { lookUpCareer();return }
         battleTag=tag;UserDefaults.standard.set(tag,forKey:"battleTag")
-        career.forget();careerStatus = .none
+        career.forget()
         discordPresence.update(career:nil,tagName:tagName)
+        let studio=discordStudio
+        // The old tag's look, if one is on its way, is not waited for (lookUpCareer drops its answer).
+        studio.battleTag=tag;studio.profile=nil;studio.profileState = .none;studio.lookedUp=nil;studio.lookAgainAt=nil;studio.lookingUp=false
         lookUpCareer()
+        refreshStudio()
     }
-    /// Full: the profile is looked up as the game opens and when a BattleTag is entered. CareerProfile
-    /// keeps its own pace (one lookup in ten minutes, and any wait OverFast asked for), so calling this
-    /// more often sends nothing more.
+    /// Full and Custom: the profile is looked up as the game opens, a while after it closes, when a BattleTag is
+    /// entered, and on Look again. CareerProfile keeps its own pace (one lookup in ten minutes, and any wait
+    /// OverFast asked for), so calling this more often sends nothing more.
     private func lookUpCareer() {
-        guard discordPresenceLevel == .full,!battleTag.isEmpty,presenceAllowed else { return }
-        careerStatus = .looking
-        career.lookUp(tag:battleTag) { [weak self] status,card in
+        guard usesProfile,!battleTag.isEmpty,presenceAllowed else { return }
+        let tag=battleTag
+        discordStudio.lookingUp=true
+        career.lookUp(tag:tag) { [weak self] status,card in
             Task { @MainActor in
-                guard let self else { return }
-                self.careerStatus=status
+                // A BattleTag entered meanwhile has its own look coming.
+                guard let self,tag == self.battleTag else { return }
                 self.discordPresence.update(career:card,tagName:self.tagName)
+                self.discordStudio.lookingUp=false
+                if case .notPublic(let until)=status { self.discordStudio.lookAgainAt=until } else { self.discordStudio.lookAgainAt=nil }
+                self.refreshStudio()
             }
         }
     }
+
+    /// Settings › Discord (DiscordStudio.swift): the cards, the preview and the two pages. AppModel keeps what
+    /// they show current (the level, the profile, the sessions, the game while it runs) and does what they ask.
+    let discordStudio=DiscordStudio(shelf:DiscordCardShelf.load())
+    /// Settings › Discord starts from what Recall keeps, and every change to the cards goes to the card.
+    private func setUpDiscordStudio() {
+        let studio=discordStudio
+        studio.level=discordPresenceLevel;studio.power=presencePower;studio.battleTag=battleTag;studio.texts=PresenceTexts.app
+        studio.avatar=UserDefaults.standard.url(forKey:"discordAvatar")
+        studio.changed={ [weak self] shelf in shelf.save();self?.discordPresence.update(design:shelf.inUse) }
+        studio.actions=DiscordStudio.Actions(level:{ [weak self] in self?.discordPresenceLevel=$0 },
+                                             power:{ [weak self] in self?.setPresencePower($0) },
+                                             battleTag:{ [weak self] in self?.commitBattleTag($0) },
+                                             lookAgain:{ [weak self] in self?.lookUpCareer() },
+                                             erase:{ [weak self] in self?.eraseCareerHistory() },
+                                             export:{ [weak self] in self?.exportSessions() })
+        discordPresence.update(design:studio.design)
+        // The preview follows the game while it runs; Discord's picture of the player comes once Recall has connected.
+        discordPresence.gameChanged={ [weak self] live in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.discordStudio.live=live;self?.keepAvatar() } }
+        }
+        refreshStudio()
+    }
+    /// Settings › Discord shows what the profile and the history hold now. Read on the profile's queue, so after
+    /// whatever it was doing (a look, a session going in, an erase).
+    private func refreshStudio() {
+        let tag=battleTag
+        career.kept(tag:tag) { [weak self] status,card,asked in
+            let history=AppModel.careerHistory.current
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self,tag == self.battleTag else { return }
+                    let studio=self.discordStudio
+                    // Sessions on screen for their ten seconds to undo an erase stay as they are.
+                    if studio.erased != nil { studio.erased=history } else { studio.history=history }
+                    studio.lookedUp=asked
+                    if case .notPublic=status { studio.profileState = .hidden;studio.profile=nil }
+                    else { studio.profileState=tag.isEmpty || card == nil ? .none : .shown;studio.profile=card }
+                    if let card { DiscordStudio.heroNames=card.heroes.mapValues(\.name) }
+                }
+            }
+        }
+    }
+    /// The player's picture on Discord, kept for the preview while Discord isn't connected.
+    private func keepAvatar() {
+        guard let avatar=discordPresence.avatar,avatar != discordStudio.avatar else { return }
+        discordStudio.avatar=avatar;UserDefaults.standard.set(avatar,forKey:"discordAvatar")
+    }
+    /// Settings › Discord's power button. Off, nothing runs: no card, no log, no lookups. Support's way to turn it
+    /// off is the same setting:
+    ///   defaults write org.overwatch2mac.launcher discordPresence -bool false
+    private var presencePower:Bool { UserDefaults.standard.object(forKey:"discordPresence") as? Bool ?? true }
+    private func setPresencePower(_ on:Bool) {
+        UserDefaults.standard.set(on,forKey:"discordPresence")
+        checkPresence()
+        if on && presencePid != nil { lookUpCareer() }
+    }
+    /// What Recall remembers › Export: the sessions as a spreadsheet in Downloads (another name when one is
+    /// there already); nil when it couldn't be written.
+    private func exportSessions()->URL? {
+        let csv=discordStudio.history.csv(heroes:discordStudio.profile?.heroes ?? [:])
+        guard let downloads=FileManager.default.urls(for:.downloadsDirectory,in:.userDomainMask).first else { return nil }
+        let name=L("{0} sessions",Brand.name)
+        var url=downloads.appendingPathComponent(name+".csv"),copy=2
+        while FileManager.default.fileExists(atPath:url.path) { url=downloads.appendingPathComponent("\(name) \(copy).csv");copy+=1 }
+        do { try Data(csv.utf8).write(to:url,options:.withoutOverwriting) } catch { return nil }
+        return url
+    }
     nonisolated private static var storedPresenceLevel:DiscordPresenceLevel {
         DiscordPresenceLevel(rawValue:UserDefaults.standard.string(forKey:"discordPresenceLevel") ?? "") ?? .standard
-    }
-    nonisolated private static func presenceTexts()->PresenceTexts {
-        PresenceTexts(menu:L("In Menus"),match:L("In Match"),voice:L("In Group Voice"),badge:L("Playing on Mac with {0}",Brand.name).replacingOccurrences(of:"Mac",with:"\u{F8FF}Mac"))
     }
     /// Overwatch's own app, which macOS shows as running while the game does (game_mode_app.py).
     nonisolated static let gameBundleID="org.overwatch2mac.overwatch"
     nonisolated static func runningGame()->pid_t? {
         NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == gameBundleID }?.processIdentifier
     }
-    @ObservationIgnored private let discordPresence=DiscordPresence(level:AppModel.storedPresenceLevel,texts:AppModel.presenceTexts(),history:AppModel.careerHistory)
+    @ObservationIgnored private let discordPresence=DiscordPresence(level:AppModel.storedPresenceLevel,texts:PresenceTexts.app,history:AppModel.careerHistory)
     /// The BattleTag's name (before the #), for line 1 at Full while the profile has none.
     private var tagName:String? { BattleTag.playerID(battleTag).flatMap { $0.split(separator:"-").first.map(String.init) } }
     /// Discord is blocked in mainland China, and previews never touch the real Discord. The region is
     /// known once the worker's status has been read (until then it is only the Mac's own suggestion).
-    private var presenceAllowed:Bool { (UserDefaults.standard.object(forKey:"discordPresence") as? Bool ?? true) && statusRead && showsDiscord && !isPreview }
+    private var presenceAllowed:Bool { presencePower && statusRead && showsDiscord && !isPreview }
     @ObservationIgnored private var statusRead=false
     /// The game process the card was started for, and macOS's report of its end (a process dispatch source).
     @ObservationIgnored private var presencePid:pid_t?
@@ -119,7 +201,8 @@ final class AppModel {
     /// The card follows the game: it appears when Overwatch opens and comes down when it closes.
     /// `game` is the game's process, nil when it isn't running.
     private func syncPresence(game:pid_t?) {
-        guard let game,presenceAllowed else { stopPresence();return }
+        // Turned off while the game runs: the run goes into the history when it ends, if the card is back by then.
+        guard let game,presenceAllowed else { stopPresence(ran:game == nil);return }
         // This game's card is up already (every app opening or closing on the Mac comes here).
         if presencePid == game { return }
         // Another run of the game: its own timer and log, from the start.
@@ -136,14 +219,17 @@ final class AppModel {
         // A process that ended before the watch was set up never reports.
         if kill(game,0) != 0 && errno == ESRCH { presenceGameEnded(game) }
     }
-    private func stopPresence() {
+    /// `ran` is false when the card comes down while the game goes on.
+    private func stopPresence(ran:Bool=true) {
         presenceExit?.cancel();presenceExit=nil;presencePid=nil
-        discordPresence.end()
+        discordPresence.end(ran:ran)
     }
     /// The game the card was for has ended: the card comes down, unless another run is up already.
     private func presenceGameEnded(_ pid:pid_t) {
         guard presencePid == pid else { return }
         presenceEnded=pid;stopPresence()
+        // The run is in the history now (on the profile's queue, which the read waits for), and Discord's picture known.
+        keepAvatar();refreshStudio()
         // Blizzard updates the profile once the game has closed: one more look a little later, while Recall is
         // open, finds the session that just ended, so the next game's card has it from the start.
         let look=DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.afterQuit=nil;self?.lookUpCareer() } }
@@ -674,6 +760,7 @@ final class AppModel {
     }
     func startup() {
         guard !started else { return };started=true
+        setUpDiscordStudio()
         // Preview states exercise UI only and never create a user environment.
         if release?.distribution == "private-preview",let i=CommandLine.arguments.firstIndex(of:"--preview-state"),CommandLine.arguments.indices.contains(i+1),let preview=Screen(rawValue:CommandLine.arguments[i+1]) {
             isPreview=true;previewScreen(preview);return
@@ -1586,9 +1673,13 @@ final class AppModel {
         let otherApps:[String:Any]=["at_last_launch":launchLoad ?? "none","now":fresh ? macLoad.report as Any : "not_checked"]
         // Schema 6 (1.6.0): discord_presence, the level, whether Discord answered and whether it took the last card (DiscordPresence.swift).
         // Schema 7 (1.6.0): its career_profile (Full), whether a BattleTag is set and OverFast's last answer, never the tag.
+        // Schema 8 (1.6.0): its power (Settings › Discord's switch), the card in use (a ready-made one's id, or "own") and
+        // how many cards are the player's own, never their names or what they show.
         let profile:[String:Any]=["battletag_set":!battleTag.isEmpty,"last_code":career.lastCode.map { $0 as Any } ?? "none"]
-        let discord:[String:Any]=["level":discordPresenceLevel.rawValue,"allowed":presenceAllowed,"connected":discordPresence.connected,"accepted":discordPresence.accepted,"career_profile":profile]
-        let data:[String:Any]=["schema":7,"discord_presence":discord,"game_mode":gameMode ? "on" : "off",
+        let shelf=discordStudio.shelf
+        let discord:[String:Any]=["level":discordPresenceLevel.rawValue,"power":presencePower ? "on" : "off","allowed":presenceAllowed,"connected":discordPresence.connected,
+                                  "accepted":discordPresence.accepted,"card":shelf.inUse.readyMade ? shelf.inUse.id : "own","own_cards":shelf.mine.count,"career_profile":profile]
+        let data:[String:Any]=["schema":8,"discord_presence":discord,"game_mode":gameMode ? "on" : "off",
                                 "mouse_input":mouseInput.rawValue,"input_monitoring":InputMonitoring.access.rawValue,
                                 "other_apps":otherApps,"logging":logs,"battlenet":battleNet,"app_language":AppLanguage.current,"default_browser":browser,"main_display":display,"app_version":release?.appVersion ?? "unknown","runtime_version":state["active_runtime"] as? String ?? "not_installed","macos":ProcessInfo.processInfo.operatingSystemVersionString,"memory_gib":ProcessInfo.processInfo.physicalMemory>>30,"architecture":"arm64","free_gib":freeBytes>>30,"game_installed":gameInstalled,"display_resolution":"\(resolution.width)x\(resolution.height)","metalfx_upscaling":metalFXUpscaling ? "on" : "off","metalfx_sharpening":metalFXSharpening.rawValue,"install_location":InstallLocation.isStandard(root) ? "default" : (InstallLocation.isInternal(root) ? "other_internal" : "external"),"recent_stages":lastEvents,"last_error":failure.reportCode,"shaders":ShaderRecord.read(root:root),"shader_memory":shaderMemory]
         report=String(data:(try? JSONSerialization.data(withJSONObject:data,options:[.prettyPrinted,.sortedKeys])) ?? Data(),encoding:.utf8) ?? ""
