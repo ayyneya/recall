@@ -475,13 +475,13 @@ import Observation
         case .locked: return (L("Not earned yet"),"lucide:lock")
         }
     }
-    /// What a line of the card's list says: now, or what it would say (Highlights is just its name then).
+    /// What a line of the card's list says: now, or what it would say (Dynamic is just its name then).
     func lineText(_ line:CardLine,_ i:CardInputs)->String {
         let rank=design.rank
         if availability(line.piece,i) == .ok,let text=line.piece.text(i,rank:rank) {
             return line.second.flatMap { $0.text(i,rank:rank) }.map { text+" · "+$0 } ?? text
         }
-        if line.piece == .highlights { return L("Highlights") }
+        if line.piece == .highlights { return L("Dynamic") }
         let sample=sampleInputs(at:i.now),text=sampleText(line.piece,sample)
         return line.second.map { text+" · "+sampleText($0,sample) } ?? text
     }
@@ -519,7 +519,7 @@ import Observation
         }
     }
     struct HighlightStep { let icon:String;let color:Color;let when:String;let text:String;let applies:Bool }
-    /// Highlights' order, each with what it would say and whether it applies right now.
+    /// Dynamic's order, each with what it would say and whether it applies right now.
     func highlightSteps(_ inputs:CardInputs)->[HighlightStep] {
         let moment=CardMoment.allCases.lazy.compactMap { CardPiece.moment($0).text(inputs,rank:self.design.rank) }.first
         let sample=sampleInputs(at:inputs.now)
@@ -726,7 +726,7 @@ import Observation
         default:
             let lines=item.design.lineTwo
             if lines.count > 1 { return L("{0} lines take turns: {1}.",String(lines.count),lines.map { $0.piece.label }.joined(separator:", ")) }
-            return L("One line: {0}.",lines.first?.piece.label ?? L("Highlights"))
+            return L("One line: {0}.",lines.first?.piece.label ?? L("Dynamic"))
         }
     }
 
@@ -769,7 +769,7 @@ import Observation
 extension DiscordStudio.Topic {
     var name:String {
         switch self {
-        case .highlights: return L("Highlights")
+        case .highlights: return L("Dynamic")
         case .moment: return L("Moments")
         case .rank: return L("Rank")
         case .record: return L("Record")
@@ -848,7 +848,7 @@ extension CardPiece {
     /// Its short name ("Week record", "Juno hours").
     var label:String {
         switch self {
-        case .highlights: return L("Highlights")
+        case .highlights: return L("Dynamic")
         case .moment(let moment):
             switch moment {
             case .rankChange: return L("Rank change")
@@ -968,7 +968,7 @@ extension CardPiece {
             }
         }
     }
-    /// Lines that need the profile (all but Highlights, Tonight and a comeback).
+    /// Lines that need the profile (all but Dynamic, Tonight and a comeback).
     var needsProfile:Bool {
         switch self {
         case .highlights,.tonight,.moment(.comeback): return false

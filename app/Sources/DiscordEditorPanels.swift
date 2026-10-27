@@ -73,7 +73,7 @@ struct LineTwoPanel: View {
             case .hero: HeroPicker(studio:studio).padding(.top,8)
             case .rank: RankTiles(studio:studio).padding(.top,8)
             case .record: RecordOptions(studio:studio).padding(.top,8)
-            case .highlights: HighlightsLadder(studio:studio).padding(.top,10)
+            case .highlights: DynamicOrder(studio:studio).padding(.top,10)
             default: EmptyView()
             }
             if let open,studio.design.lineTwo[open].piece != .highlights { SecondPiece(studio:studio,index:open).padding(.top,10) }
@@ -232,46 +232,34 @@ struct RecordOptions: View {
     }
 }
 
-/// Highlights' order: the first step that applies right now is what Line 2 says.
-struct HighlightsLadder: View {
+/// Dynamic's order: Line 2 says the first of these that applies right now. A list like the panel's others, each with
+/// what it would say, the one that applies marked.
+struct DynamicOrder: View {
     @Bindable var studio:DiscordStudio
-    @State private var drawn=false
     var body:some View {
         let inputs=studio.inputs(at:Date()),steps=studio.highlightSteps(inputs)
         let now=inputs.inMatch ? nil : steps.firstIndex { $0.applies }
-        ZStack(alignment:.topLeading) {
-            Rectangle().fill(DiscordColors.veil(0.08)).frame(width:2).padding(.vertical,22).padding(.leading,17)
-                .frame(height:CGFloat(steps.count)*44,alignment:.top)
-            LinearGradient(colors:[Color(red:1,green:184/255,blue:92/255),Color(red:1,green:92/255,blue:138/255)],startPoint:.top,endPoint:.bottom)
-                .frame(width:2,height:drawn ? CGFloat(now ?? 0)*44 : 0).clipShape(Capsule())
-                .shadow(color:Color(red:1,green:128/255,blue:64/255).opacity(0.6),radius:4)
-                .padding(.top,22).padding(.leading,17)
-            VStack(spacing:0) {
-                ForEach(Array(steps.enumerated()),id:\.offset) { index,step in
-                    let on=index == now
-                    HStack(spacing:10) {
-                        DesignIcon(step.icon,size:12).foregroundStyle(step.color)
-                            .frame(width:24,height:24).background(step.color.opacity(on ? 0.34 : 0.16).mix(with:Color(red:24/255,green:25/255,blue:28/255),by:0),in:Circle())
-                            .background(Circle().fill(Color(red:24/255,green:25/255,blue:28/255)))
-                            .compositingGroup().shadow(color:on ? step.color.opacity(0.6) : .clear,radius:6)
-                        VStack(alignment:.leading,spacing:1) {
-                            Text(step.when).designFont(11).foregroundStyle(DiscordColors.ink(0.5))
-                            Text(verbatim:step.text).discordFont(13).foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.72)).lineLimit(1)
-                        }.frame(maxWidth:.infinity,alignment:.leading)
-                        if on {
-                            HStack(spacing:5) { Circle().fill(DiscordColors.accent).frame(width:5,height:5);Text(L("Now")).designFont(10.5,.bold) }
-                                .foregroundStyle(Color(red:1,green:170/255,blue:120/255))
-                                .padding(.horizontal,8).frame(height:20).background(DiscordColors.accent.opacity(0.16),in:RoundedRectangle(cornerRadius:6))
-                                // Once the line has run down to it.
-                                .popIn(0.4,delay:0.8).transition(.identity)
-                        }
+        VStack(spacing:1) {
+            ForEach(Array(steps.enumerated()),id:\.offset) { index,step in
+                let on=index == now
+                HStack(spacing:10) {
+                    Text(verbatim:"\(index+1)").designFont(11,.bold).monospacedDigit().foregroundStyle(DiscordColors.ink(on ? 0.85 : 0.35)).frame(width:12)
+                    DesignIcon(step.icon,size:13).foregroundStyle(step.color.opacity(on ? 1 : 0.6)).frame(width:16)
+                    VStack(alignment:.leading,spacing:1) {
+                        Text(step.when).designFont(11).foregroundStyle(DiscordColors.ink(0.5)).lineLimit(1)
+                        Text(verbatim:step.text).discordFont(13).foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.65)).lineLimit(1)
+                    }.frame(maxWidth:.infinity,alignment:.leading)
+                    if on {
+                        Text(L("Now")).designFont(10.5,.bold).foregroundStyle(Color(red:1,green:170/255,blue:120/255))
+                .padding(.horizontal,10).frame(height:42)
+                .background(on ? DiscordColors.accent.opacity(0.08) : .clear,in:RoundedRectangle(cornerRadius:9))
+                            .padding(.horizontal,7).frame(height:18).background(DiscordColors.accent.opacity(0.16),in:RoundedRectangle(cornerRadius:6))
+                            .popIn(0.3).transition(.identity)
                     }
-                    .padding(.leading,6).padding(.trailing,10).frame(height:44)
-                    .background(on ? DiscordColors.accent.opacity(0.08) : .clear,in:RoundedRectangle(cornerRadius:10))
                 }
             }
         }
-        .onAppear { withAnimation(.timingCurve(0.22,1,0.36,1,duration:0.9).delay(0.15)) { drawn=true } }
+        .padding(4).background(DiscordColors.veil(0.03),in:RoundedRectangle(cornerRadius:12))
     }
 }
 
@@ -382,7 +370,7 @@ struct CatalogRowState {
         else { when=nil }
         let quiet=(piece.topic == .moment && (avail == .news || avail == .ok)) || avail == .locked || bar
         note=quiet ? nil : studio.note(avail)
-        text=piece == .highlights ? L("Highlights") : studio.sampleText(piece,sample)
+        text=piece == .highlights ? L("Dynamic") : studio.sampleText(piece,sample)
         number=on && !changing ? (place ?? 0)+1 : nil
         icon=changing ? (current ? "lucide:check" : "lucide:arrow-right") : bar ? "rc:key" : avail == .locked ? "lucide:lock" : "lucide:plus"
         filled=ready || current || (on && !changing)

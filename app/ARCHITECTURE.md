@@ -461,7 +461,7 @@ the large picture and the small badge each hold a list, and a list of more than 
 clock (the turn is the time over the design's pace, 20 seconds to 5 minutes, counted round each list's items
 that have something to say now), so the same moment always makes the same card and a Recall that restarts
 carries on where it was; the next update is at the next turn. Full shows the Default design. Line 1 is the
-player's name in the game and where they are ("pyxee · In Menus"). Line 2 is Highlights, the first that
+player's name in the game and where they are ("pyxee · In Menus"). Line 2 is Dynamic, the first that
 applies of: something that just happened, shown once, the first time the player plays after it (a rank that
 moved, "Tank ↑ Emerald 1"; a new best, "★ New best: 53 elims"; a season high, a hero's milestone, a comeback, a
 new season); the last session ("Last · Comp 2–1 · 1 other", short because Discord cuts the line at about 30
