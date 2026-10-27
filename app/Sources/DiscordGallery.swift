@@ -130,7 +130,8 @@ private struct GalleryCaption: View {
                     ActButton(icon:"lucide:share-2",tip:L("Share as a code"),on:studio.sharing) {
                         studio.sharing.toggle();studio.importing=false;studio.copied=false;studio.renaming=nil
                     }
-                    ActButton(icon:"lucide:trash-2",tip:studio.canDelete(item) ? L("Delete") : L("Your only card can’t be deleted"),enabled:studio.canDelete(item)) { studio.delete(item) }
+                    if let undo=studio.deleteUndo { UndoDeleteButton(studio:studio,undo:undo).transition(.identity) }
+                    else { ActButton(icon:"lucide:trash-2",tip:studio.canDelete(item) ? L("Delete") : L("Your only card can’t be deleted"),enabled:studio.canDelete(item)) { studio.delete(item) } }
                 }
                 if studio.sharing { SharePanel(studio:studio,code:studio.code(item)).popIn(0.3).transition(.identity) }
             }
@@ -248,6 +249,49 @@ private struct ActButton: View {
         }
         .buttonStyle(.plain).disabled(!enabled).opacity(enabled ? 1 : 0.35).onHover { inside=$0 }
         .designTip(tip).accessibilityLabel(tip)
+    }
+}
+/// Delete, just clicked: the bin shakes and goes red, then turns blue into Undo with the seconds left inside its arrow,
+/// and what happened pops up over it in a bubble. Undo puts the card back; when the seconds run out it's a bin again.
+private struct UndoDeleteButton: View {
+    @Bindable var studio:DiscordStudio
+    let undo:DiscordStudio.DeleteUndo
+    @State private var turned=false
+    @State private var shakes=0
+    var body:some View {
+        let red=Color(red:1,green:110/255,blue:100/255),blue=Color(red:110/255,green:170/255,blue:1),tint=turned ? blue : red
+        TimelineView(.periodic(from:undo.at,by:1)) { context in
+            let left=max(1,Int(undo.until.timeIntervalSince(context.date).rounded(.up)))
+            Button { studio.undoDelete() } label: {
+                ZStack {
+                    DesignIcon("lucide:trash-2",size:14).opacity(turned ? 0 : 1)
+                    ZStack {
+                        DesignIcon("lucide:rotate-ccw",size:22)
+                        Text(verbatim:"\(left)").designFont(9,.heavy).monospacedDigit().offset(y:0.5)
+                    }.opacity(turned ? 1 : 0)
+                }
+                .foregroundStyle(tint)
+                .frame(width:32,height:32)
+                .background(tint.opacity(0.2),in:RoundedRectangle(cornerRadius:9))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).accessibilityLabel(L("Undo"))
+        }
+        .keyframeAnimator(initialValue:0.0,trigger:shakes) { view,x in view.offset(x:x) } keyframes:{ _ in
+            LinearKeyframe(-3.0,duration:0.06);LinearKeyframe(3.0,duration:0.07);LinearKeyframe(-2.5,duration:0.07)
+            LinearKeyframe(2.0,duration:0.07);LinearKeyframe(0.0,duration:0.08)
+        }
+        // Its bubble, in the tooltips' style, its foot six points over the button.
+        .overlay(alignment:.top) {
+            Text(undo.text).designFont(11.5,.medium).foregroundStyle(DiscordColors.ink(0.92)).fixedSize()
+                .padding(.horizontal,9).padding(.vertical,6)
+                .background(Color(red:17/255,green:18/255,blue:20/255).opacity(0.95),in:RoundedRectangle(cornerRadius:8))
+                .overlay { RoundedRectangle(cornerRadius:8).strokeBorder(.white.opacity(0.07),lineWidth:1) }
+                .compositingGroup().shadow(color:.black.opacity(0.5),radius:14,y:10)
+                .alignmentGuide(.top) { $0[.bottom]+6 }
+                .popIn(0.3).allowsHitTesting(false)
+        }
+        .onAppear { shakes+=1;withAnimation(.easeInOut(duration:0.3).delay(0.4)) { turned=true } }
     }
 }
 /// The card's code, to copy and send: everything chosen travels in it, nothing else.

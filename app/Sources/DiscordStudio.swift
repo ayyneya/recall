@@ -105,6 +105,16 @@ import Observation
     /// How far the preview's clock was moved on (a dot on the card was clicked).
     var shift:TimeInterval=0
     var toast:(text:String,undo:DiscordCardShelf?)?
+    /// A card just deleted in My cards, while it can be undone (its button shows Undo, counting down).
+    struct DeleteUndo {
+        static let window:TimeInterval=6
+        let before:DiscordCardShelf
+        let place:Int
+        let text:String
+        let at=Date()
+        var until:Date { at.addingTimeInterval(Self.window) }
+    }
+    var deleteUndo:DeleteUndo?
     var sharing=false
     var importing=false
     var importDraft=""
@@ -142,6 +152,7 @@ import Observation
     var previewMatchStart:Date { opened.addingTimeInterval(-192) }
     func settingsOpened() { opened=Date();fold=nil }
     @ObservationIgnored private var toastEnds:Task<Void,Never>?
+    @ObservationIgnored private var undoEnds:Task<Void,Never>?
     @ObservationIgnored private var pointing:Task<Void,Never>?
     @ObservationIgnored var eraseTimer:Task<Void,Never>?
     /// When the gallery's card started playing.
@@ -649,7 +660,7 @@ import Observation
     }
     var galleryItem:GalleryItem? { galleryItems.indices.contains(galleryPlace) ? galleryItems[galleryPlace] : nil }
     func openGallery(_ open:Bool) {
-        gallery=open;galleryIndex=nil;gallerySlide=nil;sharing=false;importing=false;renaming=nil;preview=nil;held=nil;openLine=nil;copied=false;shift=0;galleryStart=Date()
+        gallery=open;galleryIndex=nil;gallerySlide=nil;deleteUndo=nil;sharing=false;importing=false;renaming=nil;preview=nil;held=nil;openLine=nil;copied=false;shift=0;galleryStart=Date()
         if open,let before=sceneBeforeParty,live == nil { scene=before;sceneBeforeParty=nil;slot = .lineTwo }
     }
     func galleryStep(_ by:Int) {
@@ -679,7 +690,18 @@ import Observation
         if item.readyMade { shelf.hidden.append(item.design.id) } else { shelf.mine.removeAll { $0.id == item.design.id } }
         if wasInUse { shelf.chosen=galleryItems.first?.design.id ?? "default" }
         galleryIndex=min(place,max(0,galleryItems.count-1));gallerySlide?.moving=false;sharing=false;renaming=nil;shift=0;galleryStart=Date()
-        say(wasInUse ? L("Deleted “{0}”. Now using “{1}”.",item.name,shelf.inUse.shownName) : L("Deleted “{0}”",item.name),undo:before)
+        let undo=DeleteUndo(before:before,place:place,text:wasInUse ? L("Deleted. Now using “{0}”.",shelf.inUse.shownName) : L("Deleted"))
+        deleteUndo=undo;undoEnds?.cancel()
+        undoEnds=Task { [weak self] in
+            try? await Task.sleep(for:.seconds(DeleteUndo.window))
+            if !Task.isCancelled,self?.deleteUndo?.at == undo.at { withAnimation(.easeOut(duration:0.25)) { self?.deleteUndo=nil } }
+        }
+    }
+    /// Delete's Undo in My cards: the card back where it was.
+    func undoDelete() {
+        guard let undo=deleteUndo else { return }
+        undoEnds?.cancel();shelf=undo.before;deleteUndo=nil
+        galleryIndex=min(undo.place,max(0,galleryItems.count-1));gallerySlide?.moving=false;galleryStart=Date()
     }
     var hiddenCount:Int { shelf.hidden.count }
     func bringBack() { shelf.hidden=[];galleryIndex=nil;shift=0;galleryStart=Date();say(L("The System cards are back")) }
