@@ -266,7 +266,7 @@ struct TurnDots: View {
 struct EditorRail: View {
     @Bindable var studio:DiscordStudio
     var body:some View {
-        TimelineView(.periodic(from:.now,by:1)) { context in
+        TimelineView(.seconds) { context in
             let now=context.date
             VStack(alignment:.leading,spacing:1) {
                 item(.picture,title:L("Image"),now:now) { picture(now) }

@@ -27,7 +27,7 @@ private struct GalleryCards: View {
     @Bindable var studio:DiscordStudio
     var body:some View {
         let items=studio.galleryItems,place=studio.galleryPlace
-        TimelineView(.periodic(from:.now,by:1)) { context in
+        TimelineView(.seconds) { context in
             ZStack {
                 if place > 0 { neighbour(items[place-1],now:context.date,leading:true) }
                 if place < items.count-1 { neighbour(items[place+1],now:context.date,leading:false) }

@@ -243,7 +243,7 @@ struct HoldHint: View {
     var body:some View {
         HStack(spacing:7) {
             DesignIcon("rc:hold",size:12).foregroundStyle(DiscordColors.accent)
-            Text(text).designFont(11).foregroundStyle(DiscordColors.ink(0.5))
+            Text(text).designFont(11,wraps:true).foregroundStyle(DiscordColors.ink(0.5))
         }
         .fadeIn(0.4)
     }
@@ -296,7 +296,7 @@ struct ChoiceRow<Trailing:View>: View {
             markView.frame(width:18,height:18)
             VStack(alignment:.leading,spacing:2) {
                 Text(title).designFont(12.5,.semibold).foregroundStyle(mark == .fixed ? DiscordColors.ink(0.6) : on ? DiscordColors.bright : DiscordColors.ink(0.78))
-                if let sub { Text(sub).designFont(11).foregroundStyle(DiscordColors.ink(0.45)).fixedSize(horizontal:false,vertical:true) }
+                if let sub { Text(sub).designFont(11,wraps:true).foregroundStyle(DiscordColors.ink(0.45)).fixedSize(horizontal:false,vertical:true) }
             }
             .frame(maxWidth:.infinity,alignment:.leading)
             trailing

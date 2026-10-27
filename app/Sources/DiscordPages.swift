@@ -18,7 +18,7 @@ struct ProfilePage: View {
         FlexColumn(spacing:12) {
             Text(state == .none ? L("Recall can read your public career profile from your BattleTag. Full and Customize use it for ranks, records and heroes. Only the BattleTag is sent, to OverFast.")
                                 : L("Everything Recall reads from your BattleTag, and where it shows on your card. It looks again after you quit Overwatch."))
-                .designFont(12.5,line:12.5*1.5).foregroundStyle(DiscordColors.ink(0.65)).fixedSize(horizontal:false,vertical:true)
+                .designFont(12.5,line:12.5*1.5,wraps:true).foregroundStyle(DiscordColors.ink(0.65)).fixedSize(horizontal:false,vertical:true)
             // The card comes back at once, as the design's does.
             if studio.tagEditing { tagField } else if !studio.battleTag.isEmpty { tagCard.transition(.identity) }
             if studio.tagEditing && !studio.battleTag.isEmpty {
@@ -91,7 +91,7 @@ struct ProfilePage: View {
             VStack(alignment:.leading,spacing:3) {
                 Text(L("Overwatch keeps this profile private")).designFont(12,.semibold,line:12*1.45).foregroundStyle(DiscordColors.body)
                 Text(L("So ranks, records and heroes can’t show. Your card still shows what the game’s log knows. To make it public, in Overwatch: Options › Social › Career Profile Visibility › Public. Then Look again."))
-                    .foregroundStyle(DiscordColors.ink(0.65)).cssLines(NSFont.systemFont(ofSize:12),12*1.45).fixedSize(horizontal:false,vertical:true)
+                    .foregroundStyle(DiscordColors.ink(0.65)).cssLines(NSFont.systemFont(ofSize:12),12*1.45,wraps:true).fixedSize(horizontal:false,vertical:true)
             }.font(LauncherStyle.font(12))
         }
         // The design's padding inside its one-point border.
@@ -235,7 +235,7 @@ private struct FactRow: View {
                     .background(DiscordColors.veil(0.055),in:RoundedRectangle(cornerRadius:8))
                 }
             }
-            if let legend=row.legend { Text(legend).designFont(11,line:11*1.45).foregroundStyle(DiscordColors.ink(0.45)).fixedSize(horizontal:false,vertical:true) }
+            if let legend=row.legend { Text(legend).designFont(11,line:11*1.45,wraps:true).foregroundStyle(DiscordColors.ink(0.45)).fixedSize(horizontal:false,vertical:true) }
             if let sample=row.sample {
                 HStack(spacing:8) {
                     Text(row.sampleLabel ?? L("On your card")).designFont(11).foregroundStyle(DiscordColors.ink(0.45)).fixedSize()
@@ -257,7 +257,7 @@ struct HistoryPage: View {
         // As the profile's page: the two boxes give up height when the sessions don't fit.
         FlexColumn(spacing:12) {
             Text(L("Sessions stay on this Mac so your card can say how today or this week went. Only your BattleTag ever leaves it."))
-                .designFont(12.5,line:12.5*1.5).foregroundStyle(DiscordColors.ink(0.65)).fixedSize(horizontal:false,vertical:true)
+                .designFont(12.5,line:12.5*1.5,wraps:true).foregroundStyle(DiscordColors.ink(0.65)).fixedSize(horizontal:false,vertical:true)
             HStack {
                 Text(L("SESSIONS")).designFont(10.5,.bold).tracking(10.5*0.05).foregroundStyle(DiscordColors.ink(0.4)).padding(.horizontal,4)
                 Spacer()

@@ -203,6 +203,8 @@ struct DesignIcon: View {
     ]
 }
 
+/// A font's size and weight, for the caches of them.
+private struct FontKey: Hashable { let size:CGFloat;let weight:Int }
 /// Noto Sans, the design's stand-in for Discord's own font (gg sans, which isn't free to bundle): the Latin and
 /// Latin Extended files Google Fonts serves, each one variable font for every weight. Other scripts fall back
 /// to the system's fonts, as they do in Discord.
@@ -215,11 +217,11 @@ enum DiscordFont {
         }
     }()
     private static let lock=NSLock()
-    nonisolated(unsafe) private static var fonts:[String:NSFont]=[:]
+    nonisolated(unsafe) private static var fonts:[FontKey:NSFont]=[:]
     /// Noto Sans at a size and weight (400 regular, 600 semibold, 700 bold), or the system font without the files.
     static func nsFont(_ size:CGFloat,_ weight:Int=400)->NSFont {
         lock.lock();defer { lock.unlock() }
-        let key="\(size)/\(weight)"
+        let key=FontKey(size:size,weight:weight)
         if let font=fonts[key] { return font }
         let systemWeight:NSFont.Weight=weight >= 700 ? .bold : weight >= 600 ? .semibold : weight >= 500 ? .medium : .regular
         guard let latin=registered.first else { return NSFont.systemFont(ofSize:size,weight:systemWeight) }
@@ -240,10 +242,10 @@ enum DiscordFont {
 /// them runs narrower than the design's.
 enum SystemFont {
     private static let lock=NSLock()
-    nonisolated(unsafe) private static var fonts:[String:NSFont]=[:]
+    nonisolated(unsafe) private static var fonts:[FontKey:NSFont]=[:]
     static func nsFont(_ size:CGFloat,_ weight:Int=400)->NSFont {
         lock.lock();defer { lock.unlock() }
-        let key="\(size)/\(weight)"
+        let key=FontKey(size:size,weight:weight)
         if let font=fonts[key] { return font }
         let descriptor=CTFontDescriptorCreateCopyWithVariation(CTFontCopyFontDescriptor(NSFont.systemFont(ofSize:size) as CTFont),0x77676874 as CFNumber,CGFloat(weight))
         let font=CTFontCreateWithFontDescriptor(descriptor,size,nil) as NSFont
@@ -304,6 +306,13 @@ enum DesignEase {
         UnitCurve.bezier(startControlPoint:UnitPoint(x:x1,y:y1),endControlPoint:UnitPoint(x:x2,y:y2)).value(at:min(max(t,0),1))
     }
 }
+
+/// The tab's clocks tick together, every second from one start. A schedule from `.now` starts over whenever its view is
+/// drawn again, and when a move animates that drawing (Customize opening), a clock's new second would move with it.
+extension TimelineSchedule where Self == PeriodicTimelineSchedule {
+    static var seconds:PeriodicTimelineSchedule { .periodic(from:DesignClock.start,by:1) }
+}
+enum DesignClock { static let start=Date() }
 
 /// The design's anime.js easings as animations: `kind` over `duration` seconds.
 struct DesignCurve: CustomAnimation {
@@ -493,28 +502,73 @@ enum DesignText {
         let ascent=(font.ascender*2).rounded()/2,descent=(-font.descender*2).rounded()/2,height=height ?? ascent+descent
         return (height,ascent+(height-ascent-descent+0.001).rounded(.down)/2)
     }
+    /// SwiftUI's own line for a font when it sets text plainly: how far apart its lines are (string drawing's line,
+    /// without the font's leading) and how far below the text's top the first baseline is.
+    static func plain(_ font:NSFont)->(pitch:CGFloat,baseline:CGFloat) {
+        let pitch=NSAttributedString(string:"Ag",attributes:[.font:font]).boundingRect(with:CGSize(width:10_000,height:10_000),options:.usesLineFragmentOrigin).height
+        return (pitch,NSLayoutManager().defaultBaselineOffset(for:font))
+    }
+    /// How cssLines sets a font's lines: plainly (line spacing, then padding above and below) or with an exact line
+    /// height (then padding), each line `height` tall.
+    struct Setting { let height:CGFloat,plain:Bool,spacing:CGFloat,top:CGFloat,bottom:CGFloat }
+    static func setting(_ font:NSFont,_ height:CGFloat?,wraps:Bool)->Setting {
+        let line=line(font,height),plain=plain(font)
+        if !wraps || line.height >= plain.pitch {
+            let top=line.baseline-plain.baseline
+            return Setting(height:line.height,plain:true,spacing:max(0,line.height-plain.pitch),top:top,bottom:line.height-plain.pitch-top)
+        }
+        let shift=line.baseline-font.pointSize.rounded(.up)
+        return Setting(height:line.height,plain:false,spacing:0,top:shift,bottom:-shift)
+    }
+    /// The design's font at a size, weight and line (DesignText), as SwiftUI's font and its setting: worked out once,
+    /// as a page sets a hundred or more texts each time it's built.
+    static func style(discord:Bool,_ size:CGFloat,_ weight:Int,_ height:CGFloat?,wraps:Bool)->(font:Font,lines:Setting) {
+        let key=StyleKey(discord:discord,size:size,weight:weight,height:height,wraps:wraps)
+        lock.lock()
+        if let known=styles[key] { lock.unlock();return known }
+        lock.unlock()
+        let font=discord ? DiscordFont.nsFont(size,weight) : SystemFont.nsFont(size,weight)
+        let made=(Font(font),setting(font,height,wraps:wraps))
+        lock.lock();styles[key]=made;lock.unlock()
+        return made
+    }
+    private struct StyleKey: Hashable { let discord:Bool;let size:CGFloat;let weight:Int;let height:CGFloat?;let wraps:Bool }
+    private static let lock=NSLock()
+    nonisolated(unsafe) private static var styles:[StyleKey:(font:Font,lines:Setting)]=[:]
 }
 extension View {
     /// Lines of a font as the design's browser sets them (DesignText): each `height` tall (the CSS line-height in
-    /// points; nil for "normal"), the baseline where the browser puts it. SwiftUI's exact line height puts a line's
-    /// baseline the font's size below the line's top, and the padding moves the text from there, its baseline (for
-    /// alignment) with it.
-    func cssLines(_ font:NSFont,_ height:CGFloat?=nil)->some View {
-        let line=DesignText.line(font,height),shift=line.baseline-font.pointSize
-        return ExactLines(line:line.height) { lineHeight(.exact(points:line.height)).padding(.top,shift).padding(.bottom,-shift) }
+    /// points; nil for "normal"), the first baseline where the browser puts it, set as plain text: line spacing makes
+    /// up the browser's line where it's taller than SwiftUI's own, and padding moves the text to the browser's
+    /// baseline, its baseline (for alignment) with it. A line shorter than SwiftUI's own can't be had that way, so
+    /// text that `wraps` onto more than one of them gets an exact line height instead, which SwiftUI measures through
+    /// TextKit (several times as long as plain text) and whose baseline it puts the font's size, rounded up, below the
+    /// line's top. SwiftUI rounds how far apart lines are up to the pixel either way.
+    func cssLines(_ font:NSFont,_ height:CGFloat?=nil,wraps:Bool=false)->some View {
+        setLines(DesignText.setting(font,height,wraps:wraps))
+    }
+    @ViewBuilder fileprivate func setLines(_ set:DesignText.Setting)->some View {
+        if set.plain {
+            ExactLines(line:set.height) { lineSpacing(set.spacing).padding(.top,set.top).padding(.bottom,set.bottom) }
+        } else {
+            ExactLines(line:set.height) { lineHeight(.exact(points:set.height)).padding(.top,set.top).padding(.bottom,set.bottom) }
+        }
     }
     /// The app's font at a size and weight, set as the design sets it (SystemFont; `line`: its CSS line-height in
-    /// points, nil for normal). On a stack, every text in it is moved, and so is all else in it.
-    func designFont(_ size:CGFloat,_ weight:Font.Weight = .regular,line:CGFloat?=nil)->some View {
-        designFont(size,SystemFont.css(weight),line:line)
+    /// points, nil for normal; `wraps`: it may take more than one line). On a stack, every text in it is moved, and so
+    /// is all else in it.
+    func designFont(_ size:CGFloat,_ weight:Font.Weight = .regular,line:CGFloat?=nil,wraps:Bool=false)->some View {
+        designFont(size,SystemFont.css(weight),line:line,wraps:wraps)
     }
     /// The same at a CSS weight between SwiftUI's (Customize's 650).
-    func designFont(_ size:CGFloat,_ weight:Int,line:CGFloat?=nil)->some View {
-        font(Font(SystemFont.nsFont(size,weight))).cssLines(NSFont.systemFont(ofSize:size),line)
+    func designFont(_ size:CGFloat,_ weight:Int,line:CGFloat?=nil,wraps:Bool=false)->some View {
+        let style=DesignText.style(discord:false,size,weight,line,wraps:wraps)
+        return font(style.font).setLines(style.lines)
     }
     /// Discord's font (Noto Sans) the same way.
-    func discordFont(_ size:CGFloat,_ weight:Int=400,line:CGFloat?=nil)->some View {
-        font(.discord(size,weight)).cssLines(DiscordFont.nsFont(size,weight),line)
+    func discordFont(_ size:CGFloat,_ weight:Int=400,line:CGFloat?=nil,wraps:Bool=false)->some View {
+        let style=DesignText.style(discord:true,size,weight,line,wraps:wraps)
+        return font(style.font).setLines(style.lines)
     }
 }
 
@@ -529,7 +583,7 @@ private struct ExactLines: Layout {
     func sizeThatFits(proposal:ProposedViewSize,subviews:Subviews,cache:inout ())->CGSize {
         subviews.reduce(CGSize.zero) { size,view in
             let own=view.sizeThatFits(proposal),exact=(own.height/line).rounded()*line
-            return CGSize(width:max(size.width,own.width),height:max(size.height,own.height >= exact && own.height-exact < 0.5 ? exact : own.height))
+            return CGSize(width:max(size.width,own.width),height:max(size.height,own.height >= exact && own.height-exact < 0.501 ? exact : own.height))
         }
     }
     func placeSubviews(in bounds:CGRect,proposal:ProposedViewSize,subviews:Subviews,cache:inout ()) {

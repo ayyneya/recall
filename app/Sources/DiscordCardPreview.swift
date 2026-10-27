@@ -175,7 +175,7 @@ struct DesignTipLayer<Content:View>: View {
         HStack(alignment:.top,spacing:7) {
             if tip.discord { DesignIcon("ic:baseline-discord",size:13).foregroundStyle(Color(red:150/255,green:160/255,blue:1)).padding(.top,2) }
             Text(tip.text).font(tip.discord ? .discord(13,500) : Font(SystemFont.nsFont(11.5,500)))
-                .cssLines(tip.discord ? DiscordFont.nsFont(13,500) : NSFont.systemFont(ofSize:11.5),tip.discord ? 13*1.4 : 11.5*1.4)
+                .cssLines(tip.discord ? DiscordFont.nsFont(13,500) : NSFont.systemFont(ofSize:11.5),tip.discord ? 13*1.4 : 11.5*1.4,wraps:true)
                 .fixedSize(horizontal:false,vertical:true)
         }
         .foregroundStyle(DiscordColors.ink(0.92))

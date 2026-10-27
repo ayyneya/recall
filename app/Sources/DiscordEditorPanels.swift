@@ -30,7 +30,7 @@ struct ProfileNotice: View {
                 DesignIcon("lucide:lock",size:12).foregroundStyle(DiscordColors.ink(0.45))
                 Text(studio.profileState == .hidden ? L("Your profile is private, so only Tonight can show.")
                      : studio.battleTag.isEmpty ? L("Rank, records and heroes need your BattleTag.") : L("Recall hasn’t found your profile yet."))
-                    .cssLines(NSFont.systemFont(ofSize:12),12*1.45).fixedSize(horizontal:false,vertical:true)
+                    .cssLines(NSFont.systemFont(ofSize:12),12*1.45,wraps:true).fixedSize(horizontal:false,vertical:true)
             }
             // The two links side by side, or one under the other when they don't fit.
             FlowLayout(spacing:14,lineSpacing:4) {
@@ -67,7 +67,7 @@ struct LineTwoPanel: View {
             TopicTiles(studio:studio)
             HStack(alignment:.top,spacing:8) {
                 Circle().fill(studio.topic.color).frame(width:6,height:6).padding(.top,6)
-                Text(studio.topic.about).designFont(11.5,line:11.5*1.45).foregroundStyle(DiscordColors.ink(0.6)).fixedSize(horizontal:false,vertical:true)
+                Text(studio.topic.about).designFont(11.5,line:11.5*1.45,wraps:true).foregroundStyle(DiscordColors.ink(0.6)).fixedSize(horizontal:false,vertical:true)
             }.frame(maxWidth:.infinity,minHeight:34,alignment:.topLeading).padding(.horizontal,2).padding(.top,9)
             switch studio.topic {
             case .hero: HeroPicker(studio:studio).padding(.top,8)
@@ -79,7 +79,7 @@ struct LineTwoPanel: View {
             if let open,studio.design.lineTwo[open].piece != .highlights { SecondPiece(studio:studio,index:open).padding(.top,10) }
             LineCatalog(studio:studio).padding(.top,4)
             if let note=studio.topicNote {
-                Text(note).designFont(11.5,line:11.5*1.45).foregroundStyle(DiscordColors.ink(0.42)).fixedSize(horizontal:false,vertical:true)
+                Text(note).designFont(11.5,line:11.5*1.45,wraps:true).foregroundStyle(DiscordColors.ink(0.42)).fixedSize(horizontal:false,vertical:true)
                     .padding(.horizontal,2).padding(.top,6)
             }
         }
@@ -94,7 +94,7 @@ struct LineTwoList: View {
     @Namespace private var glide
     @State private var dragging:Int?
     var body:some View {
-        TimelineView(.periodic(from:.now,by:1)) { context in
+        TimelineView(.seconds) { context in
             let inputs=studio.inputs(at:context.date),design=studio.design
             let shown=DiscordCardDesign.Shown(design,inputs,turn:studio.turn(at:context.date))
             let current=shown.lineTwo.isEmpty || voice ? nil : shown.lineTwo[studio.turn(at:context.date)%shown.lineTwo.count].piece
@@ -568,7 +568,7 @@ private struct PictureList: View {
     @Bindable var studio:DiscordStudio
     let own:Bool
     var body:some View {
-        TimelineView(.periodic(from:.now,by:1)) { context in
+        TimelineView(.seconds) { context in
             PanelBox(veil:0.05,corners:own ? .init(topLeading:12,bottomLeading:12,bottomTrailing:12,topTrailing:0) : .init(topLeading:0,bottomLeading:12,bottomTrailing:12,topTrailing:12)) {
                 if let pictures=studio.design.pictures { OwnPictureRows(studio:studio,pictures:pictures,now:context.date) }
                 else { FollowedPictureRows(studio:studio,now:context.date) }
@@ -715,7 +715,7 @@ private extension CardInputs {
 struct BadgePanel: View {
     @Bindable var studio:DiscordStudio
     var body:some View {
-        TimelineView(.periodic(from:.now,by:1)) { context in
+        TimelineView(.seconds) { context in
             let inputs=studio.inputs(at:context.date),sample=studio.sampleInputs(at:context.date),design=studio.design,count=design.badges.count
             let large=(studio.activity(at:context.date)["assets"] as? [String:String])?["large_image"].flatMap(URL.init(string:))
             VStack(alignment:.leading,spacing:0) {
@@ -767,7 +767,7 @@ private struct BadgeThumb: View {
 struct Note: View {
     let text:String
     var body:some View {
-        Text(text).designFont(11.5,line:11.5*1.45).foregroundStyle(DiscordColors.ink(0.42)).fixedSize(horizontal:false,vertical:true)
+        Text(text).designFont(11.5,line:11.5*1.45,wraps:true).foregroundStyle(DiscordColors.ink(0.42)).fixedSize(horizontal:false,vertical:true)
             .padding(.horizontal,4).padding(.top,10)
     }
 }
@@ -775,7 +775,7 @@ struct Note: View {
 struct LineOnePanel: View {
     @Bindable var studio:DiscordStudio
     var body:some View {
-        TimelineView(.periodic(from:.now,by:1)) { context in
+        TimelineView(.seconds) { context in
             let sample=studio.sampleInputs(at:context.date),inputs=studio.inputs(at:context.date),design=studio.design,count=design.lineOne.count
             VStack(alignment:.leading,spacing:0) {
                 PanelHeading(studio:studio,title:L("Line 1"),subtitle:L("Where you are, read live from the game, and what goes in front of it."),turns:count > 1)
@@ -804,7 +804,7 @@ struct TimerPanel: View {
     var body:some View {
         VStack(alignment:.leading,spacing:0) {
             PanelHeading(studio:studio,title:L("Timer"),subtitle:L("Discord always shows a timer."))
-            TimelineView(.periodic(from:.now,by:1)) { context in
+            TimelineView(.seconds) { context in
                 let inputs=studio.inputs(at:context.date)
                 let match:Date={ if case .match(let since)=inputs.place { return since };return studio.previewMatchStart }()
                 VStack(spacing:2) {

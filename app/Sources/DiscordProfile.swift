@@ -423,6 +423,8 @@ final class LensPicture {
     }
     /// Customize or a page opened: the picture back at once (the status line goes on as it is, as the design's does).
     func kill() {
+        // Only when something's there: a write here is another update in the middle of the page opening.
+        guard rig != nil || hover != nil else { return }
         bulgeGone=now;rig=nil;hover=nil
         tick(at:now)
     }
