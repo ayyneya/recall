@@ -21,7 +21,8 @@ final class AppDelegate: NSObject { @objc func forceQuit() {} }
         cracks()
         burst()
         quote()
-        print("PASS: the design's easings, keyframes taking over, the glides, the picture's pumps, settling, cracks and burst, and the quote's wobble")
+        sweep()
+        print("PASS: the design's easings, keyframes taking over, the glides, the picture's pumps, settling, cracks and burst, the quote's wobble, and the sessions swept away")
     }
     static func close(_ a:Double,_ b:Double,_ within:Double=0.0001)->Bool { abs(a-b) <= within }
 
@@ -197,6 +198,18 @@ final class AppDelegate: NSObject { @objc func forceQuit() {} }
     }
 
     /// A small picture to bulge and break: a gradient across and down.
+    /// Erasing: the sessions slide away as the design's sweepSessions has them (from 120 ms, each 55 ms after the one
+    /// above, over 280 ms, easing in), and the list closes 200 ms after the last has started.
+    @MainActor static func sweep() {
+        precondition(DiscordStudio.sweptAway(0,0.12) == 0 && DiscordStudio.sweptAway(0,0.4) == 1,"the first goes from 120 to 400 ms")
+        precondition(DiscordStudio.sweptAway(2,0.12+0.11) == 0 && DiscordStudio.sweptAway(2,0.23+0.28) == 1,"the third, 110 ms later")
+        // cubic-bezier(.5,0,.75,0): slow to leave, quick to go.
+        let half=DiscordStudio.sweptAway(0,0.12+0.14)
+        precondition(close(half,0.066,0.002),"halfway in time, \(half) of the way")
+        let steps=(0...28).map { DiscordStudio.sweptAway(1,0.175+Double($0)/100) }
+        precondition(zip(steps,steps.dropFirst()).allSatisfy { $0 <= $1 },"it only moves on")
+        precondition(close(DiscordStudio.sweepCloses(5),0.595),"five sessions: the list closes at 595 ms")
+    }
     static func gradient()->CGImage {
         let side=LensPicture.side
         let context=CGContext(data:nil,width:side,height:side,bitsPerComponent:8,bytesPerRow:0,space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue)!

@@ -118,6 +118,11 @@ import Observation
     var exported=false
     var hoverSeen=UserDefaults.standard.bool(forKey:"discordHoverSeen") { didSet { UserDefaults.standard.set(hoverSeen,forKey:"discordHoverSeen") } }
     /// Earned lines the player has unlocked with their key.
+    /// When the sessions began to slide away, a hold to erase done; whether their list has closed since.
+    var sweep:Date?
+    var sweepClosed=false
+    /// The sessions came back with Undo: they pop in again, one after another.
+    var restored=false
     var unlocked=Set(UserDefaults.standard.stringArray(forKey:"discordUnlocked") ?? []) { didSet { UserDefaults.standard.set(Array(unlocked).sorted(),forKey:"discordUnlocked") } }
     /// The design's tooltips for these pages.
     @ObservationIgnored let tips=DesignTips()
@@ -168,7 +173,7 @@ import Observation
         if level != .custom { level = .custom;actions.level(.custom) }
     }
     func closePage() {
-        commitErase()
+        finishSweep();commitErase()
         screen = .home;gallery=false;preview=nil;held=nil;openLine=nil;sharing=false;importing=false;renaming=nil;shift=0
         if let before=sceneBeforeParty,live == nil { scene=before };sceneBeforeParty=nil
     }
@@ -176,7 +181,7 @@ import Observation
         screen = .profile;preview=nil;held=nil;openLine=nil;openFact=nil
         tagEditing=battleTag.isEmpty;tagDraft=battleTag;tagError=false
     }
-    func openHistory() { screen = .history;exported=false }
+    func openHistory() { screen = .history;exported=false;restored=false }
 
     // MARK: the card shown
 

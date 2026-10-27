@@ -280,9 +280,9 @@ struct HistoryPage: View {
                 }
                 .frame(maxWidth:.infinity).frame(height:96)
                 .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16))
-                .transition(.scale(scale:0.96).combined(with:.opacity))
+                .popIn(0.4).transition(.identity)
             } else {
-                SessionList(studio:studio,rows:rows).flexShrink()
+                SessionList(studio:studio,rows:rows).flexShrink().transition(.identity)
             }
             SectionLabel(text:L("WHERE IT COMES FROM"))
             // The design's one-point top edge on each row: clear on the first, which it makes 51 tall; a line on the
@@ -303,7 +303,6 @@ struct HistoryPage: View {
                 PageButton(title:L("Done")) { studio.closePage() }.keyboardShortcut(.cancelAction)
             }
         }
-        .animation(.timingCurve(0.22,1,0.36,1,duration:0.4),value:rows.isEmpty)
     }
     private func sourceRow(icon:String,name:String,sub:String,opens:Bool,height:CGFloat=50)->some View {
         HStack(spacing:12) {
@@ -335,38 +334,45 @@ private struct SessionList: View {
     @State private var crossed:Double=0
     var body:some View {
         ScrollView {
-            VStack(spacing:0) {
-                ForEach(Array(rows.enumerated()),id:\.element.id) { index,row in
-                    let struck=max(0,min(1,studio.eraseProgress*(Double(rows.count)+0.6)-Double(index)*0.9))
-                    HStack(spacing:12) {
-                        Group { if let image=row.image { RemoteImage(url:image) { DiscordColors.tile } } else { GameIcon() } }
-                            .frame(width:30,height:30).background(row.image == nil ? .clear : DiscordColors.tile).clipShape(RoundedRectangle(cornerRadius:8))
-                        VStack(alignment:.leading,spacing:1) {
-                            Text(row.when).designFont(13,.semibold).foregroundStyle(DiscordColors.body)
-                            Text(row.what).designFont(11.5).foregroundStyle(DiscordColors.ink(0.55)).lineLimit(1)
-                        }.frame(maxWidth:.infinity,alignment:.leading)
-                        HStack(spacing:3) {
-                            if row.fromLog { source("lucide:file-text").designTip(L("From the game’s log")) }
-                            if row.fromProfile { source("simple-icons:battledotnet").designTip(L("From your public profile")) }
-                        }.frame(width:43,alignment:.trailing)
-                        Text(row.result).designFont(12,row.resultMove == 0 ? .medium : .bold).monospacedDigit()
-                            .foregroundStyle(row.resultMove > 0 ? Color(red:120/255,green:225/255,blue:160/255) : row.resultMove < 0 ? Color(red:1,green:120/255,blue:108/255) : DiscordColors.ink(0.45))
-                            .frame(width:88,alignment:.trailing).lineLimit(1)
+            TimelineView(.animation(paused:studio.sweep == nil)) { context in
+                let swept=studio.sweep.map { context.date.timeIntervalSince($0) }
+                VStack(spacing:0) {
+                    ForEach(Array(rows.enumerated()),id:\.element.id) { index,row in
+                        let struck=max(0,min(1,studio.eraseProgress*(Double(rows.count)+0.6)-Double(index)*0.9))
+                        let away=swept.map { DiscordStudio.sweptAway(index,$0) } ?? 0
+                        HStack(spacing:12) {
+                            Group { if let image=row.image { RemoteImage(url:image) { DiscordColors.tile } } else { GameIcon() } }
+                                .frame(width:30,height:30).background(row.image == nil ? .clear : DiscordColors.tile).clipShape(RoundedRectangle(cornerRadius:8))
+                            VStack(alignment:.leading,spacing:1) {
+                                Text(row.when).designFont(13,.semibold).foregroundStyle(DiscordColors.body)
+                                Text(row.what).designFont(11.5).foregroundStyle(DiscordColors.ink(0.55)).lineLimit(1)
+                            }.frame(maxWidth:.infinity,alignment:.leading)
+                            HStack(spacing:3) {
+                                if row.fromLog { source("lucide:file-text").designTip(L("From the game’s log")) }
+                                if row.fromProfile { source("simple-icons:battledotnet").designTip(L("From your public profile")) }
+                            }.frame(width:43,alignment:.trailing)
+                            Text(row.result).designFont(12,row.resultMove == 0 ? .medium : .bold).monospacedDigit()
+                                .foregroundStyle(row.resultMove > 0 ? Color(red:120/255,green:225/255,blue:160/255) : row.resultMove < 0 ? Color(red:1,green:120/255,blue:108/255) : DiscordColors.ink(0.45))
+                                .frame(width:88,alignment:.trailing).lineLimit(1)
+                        }
+                        .opacity(1-0.5*struck)
+                        .overlay(alignment:.leading) {
+                            Capsule().fill(Color(red:1,green:69/255,blue:58/255)).frame(height:1.5).shadow(color:Color(red:1,green:69/255,blue:58/255).opacity(0.6),radius:3)
+                                .scaleEffect(x:struck,anchor:.leading).padding(.horizontal,-2)
+                        }
+                        .padding(.horizontal,14).frame(height:50)
+                        // The design's one-point line over each row (clear over the first).
+                        .padding(.top,1)
+                        .overlay(alignment:.top) { if index > 0 { Rectangle().fill(DiscordColors.veil(0.05)).frame(height:1) } }
+                        .opacity(1-away).offset(x:-36*away)
+                        .modifier(PartArrival(trigger:nil,studio.restored ? (ArrivalStart(y:8,opacity:0),Animation.timingCurve(0.22,1,0.36,1,duration:0.42).delay(Double(index)*0.055)) : nil))
                     }
-                    .opacity(1-0.5*struck)
-                    .overlay(alignment:.leading) {
-                        Capsule().fill(Color(red:1,green:69/255,blue:58/255)).frame(height:1.5).shadow(color:Color(red:1,green:69/255,blue:58/255).opacity(0.6),radius:3)
-                            .scaleEffect(x:struck,anchor:.leading).padding(.horizontal,-2)
-                    }
-                    .padding(.horizontal,14).frame(height:50)
-                    // The design's one-point line over each row (clear over the first).
-                    .padding(.top,1)
-                    .overlay(alignment:.top) { if index > 0 { Rectangle().fill(DiscordColors.veil(0.05)).frame(height:1) } }
-                    .transition(.asymmetric(insertion:.scale(scale:0.97).combined(with:.opacity),removal:.offset(x:-36).combined(with:.opacity)))
                 }
             }
         }
         .scrollIndicators(.never).scrollBounceBehavior(.basedOnSize)
+        // Closing once the sessions have gone, to the height of what says there are none.
+        .frame(height:studio.sweepClosed ? 96 : nil,alignment:.top)
         .background(DiscordColors.surface,in:RoundedRectangle(cornerRadius:16)).clipShape(RoundedRectangle(cornerRadius:16))
     }
     private func source(_ icon:String)->some View {
@@ -381,7 +387,8 @@ private struct HoldToErase: View {
     @State private var start:Date?
     var body:some View {
         TimelineView(.animation(paused:start == nil)) { context in
-            let progress=start.map { min(1,context.date.timeIntervalSince($0)/2) } ?? 0
+            // Full while the sessions slide away.
+            let progress=studio.sweep != nil ? 1 : start.map { min(1,context.date.timeIntervalSince($0)/2) } ?? 0
             let shake=start == nil ? 0 : sin(context.date.timeIntervalSinceReferenceDate*1000/22)*min(1.6,progress*progress*2.4)
             label(progress < 0.06 ? L("Hold to erase") : L("Keep holding…"),fore:Color(red:1,green:110/255,blue:100/255))
                 .background(Color(red:1,green:69/255,blue:58/255).opacity(0.12))
@@ -392,12 +399,16 @@ private struct HoldToErase: View {
                 .clipShape(RoundedRectangle(cornerRadius:7))
                 .offset(x:shake)
                 .onChange(of:progress) { _,value in
+                    guard studio.sweep == nil else { return }
                     studio.eraseProgress=value
-                    if value >= 1 { start=nil;studio.eraseProgress=0;withAnimation(.timingCurve(0.5,0,0.75,0,duration:0.5)) { studio.eraseHistory() } }
+                    if value >= 1 { start=nil;studio.sweepSessions(rows) }
                 }
         }
-        .gesture(DragGesture(minimumDistance:0).onChanged { _ in if start == nil { start=Date() } }.onEnded { _ in
-            start=nil;withAnimation(.timingCurve(0.22,1,0.36,1,duration:0.3)) { studio.eraseProgress=0 }
+        .gesture(DragGesture(minimumDistance:0).onChanged { _ in if start == nil && studio.sweep == nil { start=Date() } }.onEnded { _ in
+            // Let go too soon, the fill runs back and the sessions are whole again; after the hold, nothing changes.
+            guard studio.sweep == nil else { start=nil;return }
+            withAnimation(.timingCurve(0.22,1,0.36,1,duration:0.26)) { start=nil }
+            withAnimation(.timingCurve(0.22,1,0.36,1,duration:0.3)) { studio.eraseProgress=0 }
         })
         .designTip(L("Hold for two seconds. Ranks and all-time records come back at the next look; sessions don’t."))
         .accessibilityLabel(L("Hold to erase")).accessibilityAction { studio.eraseHistory() }
@@ -412,7 +423,7 @@ private struct HoldToErase: View {
 private struct UndoEraseButton: View {
     @Bindable var studio:DiscordStudio
     var body:some View {
-        Button { withAnimation(.timingCurve(0.22,1,0.36,1,duration:0.42)) { studio.undoErase() } } label: {
+        Button { studio.undoErase() } label: {
             HStack(spacing:5) {
                 DesignIcon("lucide:undo-2",size:12)
                 Text(L("Erased · Undo")).designFont(11.5,.semibold)
@@ -578,10 +589,34 @@ extension DiscordStudio {
             self?.commitErase()
         }
     }
+    /// A hold to erase is done: the sessions slide away one after another, the list closes, and then they're erased
+    /// (the design's sweep).
+    func sweepSessions(_ count:Int) {
+        guard sweep == nil,erased == nil else { return }
+        let start=Date();sweep=start
+        Task { [weak self] in
+            try? await Task.sleep(for:.seconds(Self.sweepCloses(count)))
+            guard let self,self.sweep == start else { return }
+            withAnimation(.timingCurve(0.22,1,0.36,1,duration:0.32)) { self.sweepClosed=true }
+            try? await Task.sleep(for:.seconds(0.33))
+            if self.sweep == start { self.finishSweep() }
+        }
+    }
+    /// When the list starts to close: 200 ms after the last session started to go.
+    static func sweepCloses(_ count:Int)->Double { 0.12+Double(count)*0.055+0.2 }
+    /// How far session `index` has slid away `elapsed` seconds into the sweep: from 120 ms, each 55 ms after the one
+    /// above, over 280 ms, easing in.
+    static func sweptAway(_ index:Int,_ elapsed:Double)->Double { DesignEase.bezier((elapsed-0.12-Double(index)*0.055)/0.28,0.5,0,0.75,0) }
+    /// The sweep ends, or is cut short by leaving the page: the sessions are erased.
+    func finishSweep() {
+        guard sweep != nil else { return }
+        sweep=nil;sweepClosed=false;eraseProgress=0
+        eraseHistory()
+    }
     func undoErase() {
         eraseTimer?.cancel();eraseTimer=nil
         if let erased { history=erased }
-        erased=nil;undoLeft=0
+        erased=nil;undoLeft=0;restored=true
     }
     func commitErase() {
         eraseTimer?.cancel();eraseTimer=nil

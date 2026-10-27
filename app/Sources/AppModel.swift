@@ -64,6 +64,7 @@ final class AppModel {
     }
     /// Recall is quitting: an erase still waiting to be undone happens now, before Recall goes.
     func quitting() {
+        discordStudio.finishSweep()
         guard discordStudio.erased != nil else { return }
         discordStudio.eraseTimer?.cancel()
         career.eraseNow()
