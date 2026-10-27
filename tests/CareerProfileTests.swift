@@ -198,6 +198,7 @@ final class FakeOverFast {
         // The change goes into the history at the profile's own time (when the game closed), with the totals and heroes on the card.
         precondition(profile.history.current.changes.map(\.at) == [Date(timeIntervalSince1970:200)] && profile.history.current.changes[0].heroes == ["reinhardt":1800],"\(profile.history.current.changes)")
         precondition(profile.history.current.looked == at(22) && profile.history.current.seasonPeak.first?.division == "diamond")
+        precondition(profile.history.current.changes[0].rankSteps == 1 && profile.history.current.changes[0].rankMoves == ["tank":1],"each role's move is kept with the change")
         precondition(card?.totals["competitive"]?.games.played == 23 && card?.heroes["reinhardt"]?.role == .tank)
         // Kept across restarts of the app: a new profile on the same settings knows it, and asks nothing yet.
         let again=CareerProfile(base:URL(string:"https://overfast.test")!,store:store,fetch:fake.fetch)

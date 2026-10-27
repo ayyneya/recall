@@ -362,6 +362,7 @@ final class CareerProfile {
                             // Kept with the profile's own time (when the game closed), not the look's.
                             change=ProfileChange(at:Date(timeIntervalSince1970:TimeInterval(summary.updated)),season:summary.season,session:last,before:record.modes,after:modes)
                             if let moved=last.rank,let old=ranksBefore.first(where:{ $0.role == moved.role }) { change?.rankSteps=moved.steps(from:old) }
+                            if summary.season == record.season { change?.rankMoves=CareerRank.moves(from:ranksBefore,to:summary.ranks) }
                         }
                     }
                     record.modes=modes;record.updated=summary.updated;record.matches=0

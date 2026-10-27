@@ -55,8 +55,13 @@ extension CardInputs {
     }
     /// ↑ up a division, ↟ two or more, ↓ and ↡ down, – the same: what the last session did to this role.
     func arrow(_ rank:CareerRank)->String {
-        guard let change=history.changes.last,let moved=change.session.rank,moved.role == rank.role else { return "–" }
-        let steps=change.rankSteps ?? (change.session.promoted ? 1 : -1)
+        guard let change=history.changes.last else { return "–" }
+        let steps:Int
+        if let moves=change.rankMoves { steps=moves[rank.role.rawValue] ?? 0 }
+        else {
+            guard let moved=change.session.rank,moved.role == rank.role else { return "–" }
+            steps=change.rankSteps ?? (change.session.promoted ? 1 : -1)
+        }
         return steps >= 2 ? "↟" : steps == 1 ? "↑" : steps == -1 ? "↓" : steps <= -2 ? "↡" : "–"
     }
     func rankText(_ rank:CareerRank)->String {
@@ -105,7 +110,7 @@ extension CardInputs {
         case .careerProfile: return profile?.page.map { (L("Career Profile"),$0) }
         case .heroPage:
             guard let hero=picture?.hero ?? topHeroes.first,let url=URL(string:"https://overwatch.blizzard.com/en-us/heroes/\(hero)/") else { return nil }
-            return (L("{0}’s page",heroName(hero)),url)
+            return (heroName(hero),url)
         case .patchNotes: return (L("Patch notes"),URL(string:"https://overwatch.blizzard.com/en-us/news/patch-notes/")!)
         }
     }

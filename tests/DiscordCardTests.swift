@@ -67,6 +67,14 @@ import Foundation
         precondition(text(.rank(.current),inputs(history:moved)) == "Tank ↟ Emerald 1")
         two.rankSteps = -1;two.session.promoted=false;moved.changes[1]=two
         precondition(text(.rank(.current),inputs(history:moved)) == "Tank ↓ Emerald 1")
+        // Each role's own move, when the change kept them: the profile page's marks for every role, not one.
+        two.rankMoves=["tank":1,"open":-2];moved.changes[1]=two
+        precondition(text(.rank(.all),inputs(history:moved)) == "Tank ↑ Emerald 1 · 6v6 ↡ Emerald 1")
+        two.rankMoves=[:];moved.changes[1]=two
+        precondition(text(.rank(.all),inputs(history:moved)) == "Tank – Emerald 1 · 6v6 – Emerald 1","kept, and none moved")
+        precondition(CareerRank.moves(from:[rank(.tank,"gold",2,"g"),rank(.open,"emerald",1,"e"),rank(.support,"gold",1,"g")],
+                                      to:[rank(.tank,"emerald",1,"e"),rank(.open,"emerald",1,"e"),rank(.damage,"gold",1,"g")]) == ["tank":11],
+                     "Gold 2 to Emerald 1 is eleven divisions; a role that didn't move, or isn't in both looks, has none")
         // Records: each period with its tag, the last session's other modes, both modes, a win rate; none with no games.
         precondition(text(.record(.last,.competitive,winRate:false)) == "Last · Comp 1–0 · 1 other" && text(.record(.today,.competitive,winRate:false)) == "Today · Comp 1–0")
         precondition(text(.record(.week,.competitive,winRate:false)) == "Week · Comp 3–1" && text(.record(.season,.competitive,winRate:false)) == "Season · Comp 3–1")
@@ -223,7 +231,7 @@ import Foundation
         let card=main.activity(inputs())
         precondition(["Juno main","Juno · 15h","Support · Juno 15h"].contains(card["state"] as? String ?? ""),"\(card)")
         let buttons=card["buttons"] as? [[String:String]]
-        precondition(buttons?.last == ["label":"Juno’s page","url":"https://overwatch.blizzard.com/en-us/heroes/juno/"],"\(String(describing:buttons))")
+        precondition(buttons?.last == ["label":"Juno","url":"https://overwatch.blizzard.com/en-us/heroes/juno/"],"\(String(describing:buttons))")
         var notes=DiscordCardDesign.standard;notes.button = .patchNotes
         precondition((notes.activity(inputs())["buttons"] as? [[String:String]])?.last?["label"] == "Patch notes")
         notes.button=nil

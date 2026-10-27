@@ -23,6 +23,9 @@ struct ProfileChange: Codable, Equatable {
     var heroes:[String:Int]=[:]
     /// Divisions the last session's rank moved (LastSession.rank); nil when it didn't.
     var rankSteps:Int?
+    /// Divisions each role's rank moved, by role (CareerRank.Role's raw value), for the roles that moved. Nil in a
+    /// change kept before Recall kept these: it tells only the rank that moved most.
+    var rankMoves:[String:Int]?
     /// A rank above the role's best so far this season (set as the change is kept; a season's first ranks are none).
     var seasonHigh:CareerRank?
     var milestone:Milestone?
@@ -207,6 +210,12 @@ extension LastSession {
 extension CareerRank {
     /// Divisions between two ranks (Gold 1 to Platinum 5 is one, Gold 3 to Gold 1 is two); positive is up.
     func steps(from old:CareerRank)->Int { place-old.place }
+    /// The divisions each role moved between two looks' ranks, for the roles ranked in both that moved.
+    static func moves(from before:[CareerRank],to after:[CareerRank])->[String:Int] {
+        after.reduce(into:[:]) { moves,new in
+            if let old=before.first(where:{ $0.role == new.role }),new.steps(from:old) != 0 { moves[new.role.rawValue]=new.steps(from:old) }
+        }
+    }
     private var place:Int { (Self.divisions.firstIndex(of:division) ?? -1)*5+(5-tier) }
 }
 
