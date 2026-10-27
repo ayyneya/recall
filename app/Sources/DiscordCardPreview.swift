@@ -540,6 +540,9 @@ private struct PartHighlight: View {
 struct DiscordShell<Card:View>: View {
     var profile=true
     var avatar:URL?
+    /// The easter eggs on the picture and the status line (DiscordProfile.swift): the Discord tab's own, so they
+    /// outlast the card's redrawing; the gallery's cards, which show no profile, use their own.
+    var fun=ProfileFun()
     @ViewBuilder var card:Card
     var body:some View {
         VStack(alignment:.leading,spacing:0) {
@@ -554,24 +557,17 @@ struct DiscordShell<Card:View>: View {
                 }
             }
             .frame(height:profile ? 58 : 0).clipShape(UnevenRoundedRectangle(topLeadingRadius:10,topTrailingRadius:10))
-            ZStack(alignment:.topLeading) {
-                Text(L("You")).font(.discord(18,700)).foregroundStyle(DiscordColors.title).shadow(color:.black.opacity(0.55),radius:1.5,y:1)
-                    .frame(height:22).padding(.leading,98).padding(.top,2)
-                RemoteImage(url:avatar) {
-                    Circle().fill(Color(red:88/255,green:101/255,blue:242/255)).overlay { DesignIcon("ic:baseline-discord",size:34).foregroundStyle(.white) }
-                }
-                .frame(width:66,height:66).clipShape(Circle())
-                .frame(width:76,height:76).background(DiscordColors.popout,in:Circle())
-                .overlay(alignment:.bottomTrailing) { Circle().fill(DiscordColors.online).frame(width:14,height:14).padding(4).background(DiscordColors.popout,in:Circle()).offset(x:1,y:1) }
-                .offset(x:12,y:-36)
-            }
-            .frame(height:profile ? 52 : 10,alignment:.top).opacity(profile ? 1 : 0).allowsHitTesting(profile)
+            DiscordProfileTop(avatar:avatar,fun:fun)
+                .frame(height:profile ? 52 : 10,alignment:.top).opacity(profile ? 1 : 0).allowsHitTesting(profile)
             card.padding([.horizontal,.bottom],10)
         }
         .frame(width:372)
-        .background(DiscordColors.popout,in:RoundedRectangle(cornerRadius:10,style:.continuous))
         // The pop-out's own shadow, not one under each line inside it.
-        .compositingGroup().shadow(color:.black.opacity(0.45),radius:16,y:12)
+        .background { RoundedRectangle(cornerRadius:10).fill(DiscordColors.popout).shadow(color:.black.opacity(0.45),radius:16,y:12) }
+        .overlay(alignment:.topLeading) { ProfileFunLayer(fun:fun) }
+        .onGeometryChange(for:CGSize.self) { $0.size } action:{ fun.shell=$0 }
+        .modifier(FunJolt(fun:fun))
+        .onChange(of:profile) { _,shown in if !shown { fun.kill() } }
         .environment(\.colorScheme,.dark)
     }
 }

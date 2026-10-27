@@ -92,6 +92,8 @@ import Observation
     var unlocked=Set(UserDefaults.standard.stringArray(forKey:"discordUnlocked") ?? []) { didSet { UserDefaults.standard.set(Array(unlocked).sorted(),forKey:"discordUnlocked") } }
     /// The design's tooltips for these pages.
     @ObservationIgnored let tips=DesignTips()
+    /// The easter eggs on the pop-out's picture and status line.
+    @ObservationIgnored let profileFun=ProfileFun()
     /// When Settings opened: the preview's game opened 42:18 before it and its match 3:12 before it, so its timers
     /// read like a session's and run on, as the design's do.
     @ObservationIgnored private var opened=Date()

@@ -1329,7 +1329,10 @@
     "Keep Line 2, no count": "둘째 줄 유지, 인원수 없음",
     "Suggested": "추천",
     "Heroes": "영웅",
-    "Extra": "기타"
+    "Extra": "기타",
+    "#1 {0} player on Mac": "Mac 1등 {0} 플레이어",
+    "i have no idea what is going on :3": "무슨 일인지 하나도 모르겠어 :3",
+    ". . . oh moons": ". . . oh moons"
   },
   "InfoPlist": {
     "Voice chat in Overwatch uses your microphone.": "오버워치의 음성 채팅에 마이크를 사용합니다.",

@@ -72,7 +72,7 @@ struct CardStage: View {
                     // From now, not the timeline's tick (up to a second before it).
                     let outlineDelay:Double=studio.levelFlow.map { flow in max(0,0.88-Date().timeIntervalSince(flow.at)) } ?? 0
                     if home || studio.device == .desktop {
-                        DiscordShell(profile:home,avatar:studio.avatar) {
+                        DiscordShell(profile:home,avatar:studio.avatar,fun:studio.profileFun) {
                             DiscordCardView(activity:activity,now:context.date,selected:home ? nil : studio.slot,
                                             pick:home ? (studio.power ? { studio.openEditor(at:$0) } : nil) : { studio.pick($0) },
                                             lineTwoTurn:home ? studio.homeLineTwoTurn(at:context.date) : nil,

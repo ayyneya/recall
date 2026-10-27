@@ -1329,7 +1329,10 @@
     "Keep Line 2, no count": "保留第二行，不显示人数",
     "Suggested": "推荐",
     "Heroes": "英雄",
-    "Extra": "其他"
+    "Extra": "其他",
+    "#1 {0} player on Mac": "Mac 上的头号 {0} 玩家",
+    "i have no idea what is going on :3": "完全不知道发生了什么 :3",
+    ". . . oh moons": ". . . oh moons"
   },
   "InfoPlist": {
     "Voice chat in Overwatch uses your microphone.": "守望先锋的语音聊天会使用你的麦克风。",
