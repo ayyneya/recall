@@ -31,6 +31,9 @@ enum Brand {
     /// The card's Mac badge (an original drawing of a Mac, scripts/mac_badge.swift), loaded the same way. Settings
     /// › Discord shows the app's own copy, so it shows there before it's on the main branch.
     static let macBadge=URL(string:"https://raw.githubusercontent.com/\(repositoryPath)/main/app/Resources/MacBadge.png")!
+    /// The card's Extra pictures (CardArt), loaded the same way. For now from the fork's preview branch, so they can be
+    /// tried in Discord before they're merged; this becomes repositoryPath's main before the pull request.
+    static func art(_ file:String)->URL { URL(string:"https://raw.githubusercontent.com/ayyneya/recall/discord-presence-profile/app/Resources/\(file)")! }
     static var trademarks:String { L("Not affiliated with or endorsed by Blizzard Entertainment or Apple. Overwatch is a trademark of Blizzard Entertainment, Inc. Mac is a trademark of Apple Inc.") }
 
     // The author's links. Mosaic News opens on the App Store, where every Mac that runs

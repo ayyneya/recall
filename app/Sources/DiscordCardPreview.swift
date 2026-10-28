@@ -28,9 +28,11 @@ enum DiscordColors {
     private var loading:Set<URL>=[]
     private var waiting:[URL:[()->Void]]=[:]
     func image(_ url:URL)->NSImage? { images[url] ?? bundled(url) }
-    /// The Mac badge is the app's own copy: the same file Discord loads, there before it's on the main branch.
+    /// The Mac badge and the Extra pictures are the app's own copies: the same files Discord loads, there before
+    /// they're on the main branch.
     private func bundled(_ url:URL)->NSImage? {
-        guard url == Brand.macBadge,let image=Bundle.main.url(forResource:"MacBadge",withExtension:"png").flatMap(NSImage.init(contentsOf:)) else { return nil }
+        guard let file=url == Brand.macBadge ? "MacBadge.png" : CardArt.allCases.first(where:{ Brand.art($0.file) == url })?.file,
+              let image=Bundle.main.url(forResource:file,withExtension:nil).flatMap(NSImage.init(contentsOf:)) else { return nil }
         images[url]=image
         return image
     }
@@ -82,7 +84,14 @@ struct RemoteImage<Placeholder:View>: View {
     var body:some View {
         Group {
             if let image=loaded ?? url.flatMap({ RemoteImages.shared.image($0) }) {
-                Image(nsImage:image).resizable().interpolation(.high).aspectRatio(contentMode:fill ? .fill : .fit)
+                if let moving=MovingImage.of(image) {
+                    // A GIF plays, as Discord plays it (SwiftUI's Image shows its first frame only).
+                    TimelineView(.periodic(from:.distantPast,by:moving.step)) { context in
+                        Image(decorative:moving.frame(at:context.date),scale:1).resizable().interpolation(.high).aspectRatio(contentMode:fill ? .fill : .fit)
+                    }
+                } else {
+                    Image(nsImage:image).resizable().interpolation(.high).aspectRatio(contentMode:fill ? .fill : .fit)
+                }
             } else { placeholder }
         }
         .task(id:url) {
@@ -90,6 +99,39 @@ struct RemoteImage<Placeholder:View>: View {
             if let image=RemoteImages.shared.image(url) { loaded=image;return }
             RemoteImages.shared.load(url) { loaded=RemoteImages.shared.image(url) }
         }
+    }
+}
+/// A GIF's frames and how long each shows, read once for each image.
+struct MovingImage {
+    let frames:[CGImage]
+    let delays:[Double]
+    /// The shortest frame: how often to look.
+    var step:Double { delays.min() ?? 0.1 }
+    /// The frame showing at `date`, all of them looping on one clock.
+    func frame(at date:Date)->CGImage {
+        let total=delays.reduce(0,+)
+        var t=date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy:total)
+        for (frame,delay) in zip(frames,delays) { if t < delay { return frame };t-=delay }
+        return frames[frames.count-1]
+    }
+    @MainActor private static var known:[ObjectIdentifier:MovingImage?]=[:]
+    /// nil for a still image.
+    @MainActor static func of(_ image:NSImage)->MovingImage? {
+        let id=ObjectIdentifier(image)
+        if let seen=known[id] { return seen }
+        var found:MovingImage?
+        if let rep=image.representations.first as? NSBitmapImageRep,let count=rep.value(forProperty:.frameCount) as? Int,count > 1 {
+            var frames:[CGImage]=[],delays:[Double]=[]
+            for index in 0..<count {
+                rep.setProperty(.currentFrame,withValue:index)
+                guard let frame=rep.cgImage else { continue }
+                frames.append(frame);delays.append(max(0.02,rep.value(forProperty:.currentFrameDuration) as? Double ?? 0.1))
+            }
+            rep.setProperty(.currentFrame,withValue:0)
+            if frames.count > 1 { found=MovingImage(frames:frames,delays:delays) }
+        }
+        known[id]=found
+        return found
     }
 }
 /// Overwatch's own picture, as Discord shows it when the card sends none.

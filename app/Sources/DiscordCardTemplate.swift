@@ -41,7 +41,35 @@ struct CardLine: Codable, Hashable {
     var inMatch=true
 }
 
-enum CardPicture: Codable, Hashable { case playerIcon,lastHero,overwatch,rankEmblem,recall,roleMain,topHeroes,hero(String) }
+enum CardPicture: Codable, Hashable { case playerIcon,lastHero,overwatch,rankEmblem,recall,roleMain,topHeroes,hero(String),art(CardArt) }
+/// The large image's Extra pictures, which come with Recall (app/Resources): Juno (the design's), a Winston plush, and
+/// Jetpack Cat (a GIF, which moves where Discord lets it).
+enum CardArt: String, Codable, CaseIterable {
+    case juno,winston,jetpackCat
+    var file:String {
+        switch self {
+        case .juno: return "Juno.png"
+        case .winston: return "WinstonPlush.png"
+        case .jetpackCat: return "JetpackCat.gif"
+        }
+    }
+    /// Its name, as heroes' names are shown (the game's own).
+    var name:String {
+        switch self {
+        case .juno: return "Juno"
+        case .winston: return "Winston"
+        case .jetpackCat: return "Jetpack Cat"
+        }
+    }
+    /// Its letter in a card's code (DiscordCardCode): after a dash, in a hero key's place, as no hero's key starts so.
+    var letter:Character {
+        switch self {
+        case .juno: return "j"
+        case .winston: return "w"
+        case .jetpackCat: return "c"
+        }
+    }
+}
 enum CardBadge: String, Codable, CaseIterable { case rank,mac,recall }
 /// The timer counts from when the game opened, or starts over with each match.
 enum CardTimer: String, Codable { case session,match }

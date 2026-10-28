@@ -207,11 +207,21 @@ enum DiscordCardCode {
         case .roleMain: bits.put(5,3)
         case .topHeroes: bits.put(6,3)
         case .hero(let key): bits.put(7,3);put(hero:key,&bits)
+        // An Extra picture goes as a hero spelt out, a dash and its letter: no hero's key starts with a dash, so it reads
+        // back as itself, and a Recall from before them leaves it out (a hero it doesn't know).
+        case .art(let art): bits.put(7,3);put(hero:"-"+String(art.letter),&bits)
         }
     }
     private static func picture(_ bits:inout Bits)->CardPicture? {
         guard let kind=bits.take(3) else { return nil }
-        if kind == 7 { return hero(&bits).flatMap { $0.map { .hero($0) } } }
+        if kind == 7 {
+            return hero(&bits).flatMap { key in
+                key.map { key in
+                    guard key.first == "-" else { return .hero(key) }
+                    return CardArt.allCases.first { "-"+String($0.letter) == key }.map { .art($0) } ?? .hero(key)
+                }
+            }
+        }
         return [.playerIcon,.lastHero,.overwatch,.rankEmblem,.recall,.roleMain,.topHeroes][kind]
     }
     /// 0 is the most-played hero, 1–62 the list's, 63 a key spelt out (its length, then its letters: 32 at most).

@@ -588,7 +588,8 @@ import Observation
             let all=heroesOfRole(i)
             return (allHeroes ? all : Array(all.prefix(10))).map { (CardPicture.hero($0),heroCaption($0,i)) }
         case .extra:
-            return [(.rankEmblem,i.rank(design.rank).map { L("Rank emblem · {0}",$0.name) } ?? L("Rank emblem")),(.recall,L("Recall’s icon"))]
+            let fixed:[(picture:CardPicture,name:String)]=[(.rankEmblem,i.rank(design.rank).map { L("Rank emblem · {0}",$0.name) } ?? L("Rank emblem")),(.recall,L("Recall’s icon"))]
+            return fixed+CardArt.allCases.map { (CardPicture.art($0),$0.name) }
         }
     }
     func badgeAbout(_ badge:CardBadge,_ i:CardInputs)->String {
@@ -1041,6 +1042,7 @@ extension CardPicture {
         case .roleMain: return L("Role main")
         case .topHeroes: return L("Top heroes")
         case .hero(let key): return DiscordStudio.heroName(key)
+        case .art(let art): return art.name
         }
     }
     /// What it shows now: the hero it brings, or its name.

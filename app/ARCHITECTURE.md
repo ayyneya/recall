@@ -501,7 +501,9 @@ card, and the sessions kept: holding Erase for two seconds erases them, with ten
 or quitting Recall erases at once, `AppModel.quitting`), and Export
 writes them to Downloads as a spreadsheet (`CareerHistory.csv`). The preview follows the game while it runs
 (`DiscordPresence.gameChanged`), and shows the design's picture of Juno (`app/Resources/Juno.png`), the same for
-every player, with the design's status lines beside "You" and its easter eggs
+every player (it, a Winston plush and Jetpack Cat, a GIF, are also the large image's Extra pictures, `CardArt`:
+Discord loads them from the repository like the badges, for now from the fork's preview branch, and Settings
+shows the app's own copies, the GIF playing), with the design's status lines beside "You" and its easter eggs
 (`DiscordProfile.swift`): pointing at the picture bulges it, each click pumps it up until the sixth bursts it
 into pieces that bounce inside the pop-out before it grows back, and pointing at the status line makes its
 letters jump; Customize or a page puts the picture back at once. `tests/DiscordMotionTests.swift` checks the

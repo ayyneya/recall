@@ -300,7 +300,8 @@ import Foundation
         design.lineTwo=(0..<dice.int(8)).map { _ in CardLine(piece:randomPiece(&dice),second:dice.coin() ? randomPiece(&dice) : nil,inMatch:dice.coin()) }
         if dice.coin() {
             design.pictures=(0..<dice.int(8)).map { _ in
-                dice.int(8) == 7 ? .hero(randomHero(&dice) ?? "ana") : dice.pick([CardPicture.playerIcon,.lastHero,.overwatch,.rankEmblem,.recall,.roleMain,.topHeroes])
+                dice.int(8) == 7 ? (dice.int(3) == 0 ? .art(dice.pick(CardArt.allCases)) : .hero(randomHero(&dice) ?? "ana"))
+                    : dice.pick([CardPicture.playerIcon,.lastHero,.overwatch,.rankEmblem,.recall,.roleMain,.topHeroes])
             }
         }
         design.badges=(0..<dice.int(4)).map { _ in dice.pick(CardBadge.allCases) }
@@ -340,5 +341,15 @@ import Foundation
         precondition(DiscordCardCode.decode(String(plain.dropLast())) == nil && DiscordCardCode.decode(String(plain.dropFirst())) == nil)
         for bad in ["","U","hello world","0","\(plain)Z"] { precondition(DiscordCardCode.decode(bad) == nil,bad) }
         precondition(DiscordCardCode.group("ABCDEFGHJ") == "ABCD-EFGHJ" && DiscordCardCode.group("ABCDEFGH") == "ABCD-EFGH" && DiscordCardCode.group("ABC") == "ABC")
+        // The Extra pictures come back as themselves, a few characters each; a hero whose key starts with a dash (none
+        // does) reads as a hero.
+        var extra=DiscordCardDesign.standard;extra.pictures=CardArt.allCases.map { .art($0) }
+        let letters={ (design:DiscordCardDesign) in DiscordCardCode.encode(design).filter { $0 != "-" }.count }
+        precondition(back(extra) == extra && letters(extra)-letters(.standard) <= 18,DiscordCardCode.encode(extra))
+        var odd=DiscordCardDesign.standard;odd.pictures=[.hero("-x")]
+        precondition(back(odd)?.pictures == [.hero("-x")])
+        // Discord loads them from the repository, and the hover says which.
+        let juno=CardPicture.art(.jetpackCat).image(inputs(),rank:.lastPlayed,turn:0)
+        precondition(juno?.url.lastPathComponent == "JetpackCat.gif" && juno?.url.scheme == "https" && juno?.hover == "Jetpack Cat")
     }
 }

@@ -34,7 +34,8 @@ def inspect_path(name):
 
 
 # .woff2: the fonts reviewed artwork is drawn with (Noto Sans in Settings › Discord, SIL OFL; THIRD_PARTY_NOTICES.md).
-IMAGE_SUFFIXES = ('.png', '.icns', '.jpg', '.jpeg', '.woff2')
+# .gif: the Discord card's moving Extra picture (Jetpack Cat), which Discord loads from the repository.
+IMAGE_SUFFIXES = ('.png', '.icns', '.jpg', '.jpeg', '.woff2', '.gif')
 IMAGE_LIMIT = 4 * 1024 * 1024
 
 

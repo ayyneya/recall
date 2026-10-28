@@ -351,6 +351,7 @@ extension CardPicture {
         case .overwatch: return nil
         case .rankEmblem: return i.rank(choice).map { CardImage(url:$0.icon,hover:$0.label()) }
         case .recall: return CardImage(url:Brand.discordBadge,hover:i.texts.badge)
+        case .art(let art): return CardImage(url:Brand.art(art.file),hover:art.name)
         case .hero(let key): return hero(key)
         case .roleMain:
             // The most-played hero of the rank's role, or of any role without a rank.
