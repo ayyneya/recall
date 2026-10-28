@@ -351,5 +351,10 @@ import Foundation
         // Discord loads them from the repository, and the hover says which.
         let juno=CardPicture.art(.jetpackCat).image(inputs(),rank:.lastPlayed,turn:0)
         precondition(juno?.url.lastPathComponent == "JetpackCat.gif" && juno?.url.scheme == "https" && juno?.hover == "Jetpack Cat")
+        // And it's what goes to Discord as the large image (an external address, which Discord lets be a GIF; 300
+        // characters at most), with its name to point at.
+        var cat=DiscordCardDesign.standard;cat.pictures=[.art(.jetpackCat)]
+        let sent=assets(cat.activity(inputs()))
+        precondition(sent["large_image"] == Brand.art("JetpackCat.gif").absoluteString && sent["large_text"] == "Jetpack Cat" && (sent["large_image"]?.count ?? 0) <= 300,"\(sent)")
     }
 }
