@@ -248,6 +248,7 @@ extension CardPiece {
                 guard let top=i.topHeroes.first,let time=i.heroTime[top],Double(time) > Double(i.heroTime.values.reduce(0,+))*0.5 else { return nil }
                 return L("{0} one-trick",i.heroName(top))
             case .century: return total >= 100 ? L("{0} hours in",String(total/100*100)) : nil
+            case .cardboardSupport: return Self.cardboard(i).earned ? L("Cardboard Support") : nil
             }
         }
     }
@@ -277,6 +278,12 @@ extension CardPiece {
             let share=Double(time)/Double(max(1,i.heroTime.values.reduce(0,+)))
             return share > 0.5 ? (1,L("Earned: {0} is {1}% of your hours",i.heroName(top),percent(share)),nil)
                                : (share/0.5,nil,L("{0} is {1}% of your hours; needs over half.",i.heroName(top),percent(share)))
+        case .title(.cardboardSupport):
+            let cardboard=Self.cardboard(i),share=i.share(.support)
+            if cardboard.earned { return (1,L("Earned: Support main, more damage than healing"),nil) }
+            if !cardboard.main { return (min(0.5,share/0.45/2),nil,L("Support is {0}% of your hours; needs 45%, and more damage than healing.",percent(share))) }
+            return (0.5+0.5*min(0.97,Double(cardboard.damage)/Double(max(1,cardboard.healing))),nil,
+                    L("Support main. Damage {0}, healing {1}: damage has to be more.",cardboard.damage.formatted(.number),cardboard.healing.formatted(.number)))
         case .title(.century):
             let hours=i.heroTime.values.reduce(0,+)/3600
             return hours >= 100 ? (1,L("Earned at 100 hours"),nil) : (Double(hours)/100,nil,L("{0} of 100 hours played.",String(hours)))
@@ -294,6 +301,14 @@ extension CardPiece {
         }
     }
 
+    /// Cardboard Support (the player's own joke): Support is the main role (most played, 45% or more of the hours), yet
+    /// the profile's damage is more than its healing.
+    private static func cardboard(_ i:CardInputs)->(earned:Bool,main:Bool,damage:Int,healing:Int) {
+        let support=i.share(.support)
+        let main=support >= 0.45 && [CareerRank.Role.tank,.damage].allSatisfy { i.share($0) < support }
+        let damage=i.modes.reduce(0) { $0+$1.damage },healing=i.modes.reduce(0) { $0+$1.healing }
+        return (main && damage > healing,main,damage,healing)
+    }
     /// The title for a role that has at least 45% of the time played.
     private static func roleMain(_ i:CardInputs)->String? {
         guard let role=[CareerRank.Role.tank,.damage,.support].max(by:{ i.share($0) < i.share($1) }),i.share(role) >= 0.45 else { return nil }

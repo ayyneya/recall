@@ -15,7 +15,7 @@ enum RecordMode: String, Codable, CaseIterable { case competitive,quickPlay,both
 enum HeroLine: String, Codable, CaseIterable { case main,hours,role,winRate }
 enum BestLine: String, Codable, CaseIterable { case eliminations,damage,healing,killStreak,multikill,new }
 enum TonightLine: String, Codable, CaseIterable { case matches,nights,week }
-enum TitleLine: String, Codable, CaseIterable { case endorsement,hours,roleMain,flex,oneTrick,century }
+enum TitleLine: String, Codable, CaseIterable { case endorsement,hours,roleMain,flex,oneTrick,century,cardboardSupport }
 
 /// One thing Line 2 can say (DiscordCardCatalog.swift has the words).
 enum CardPiece: Codable, Hashable {

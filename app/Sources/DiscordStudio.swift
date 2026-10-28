@@ -951,6 +951,7 @@ extension CardPiece {
             case .flex: return L("Flex")
             case .oneTrick: return L("One-trick")
             case .century: return L("Century")
+            case .cardboardSupport: return L("Cardboard Support")
             }
         }
     }
@@ -1005,6 +1006,7 @@ extension CardPiece {
             case .endorsement: return L("Your endorsement level")
             case .hours: return L("Your total hours")
             case .century: return L("Earned at 100 hours")
+            case .cardboardSupport: return L("Support main who deals more damage than healing")
             default: return L("Earned from your hours")
             }
         }
@@ -1056,7 +1058,7 @@ extension CardPiece {
     /// sees (while it has seen fewer than ten).
     func learning(_ i:CardInputs)->String? {
         switch self {
-        case .hero(_,.hours),.hero(_,.main),.hero(_,.role),.title(.hours),.title(.century),.title(.roleMain),.title(.flex),.title(.oneTrick):
+        case .hero(_,.hours),.hero(_,.main),.hero(_,.role),.title(.hours),.title(.century),.title(.roleMain),.title(.flex),.title(.oneTrick),.title(.cardboardSupport):
             guard i.profile != nil,let hours=i.history.hours,!hours.heroes.isEmpty else { return nil }
             return L("Counted by Recall since {0}",hours.since.formatted(.dateTime.month(.abbreviated).day()))
         case .record(.today,_,_),.record(.week,_,_),.record(.season,_,_),.rank(.climb),.rank(.peak),.tonight(.nights),.tonight(.week):

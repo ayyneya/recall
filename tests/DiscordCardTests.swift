@@ -64,6 +64,17 @@ import Foundation
         precondition(text(.title(.hours),i) == "121h in Overwatch" && text(.title(.century),i) == "100 hours in","\(String(describing:text(.title(.hours),i)))")
         precondition(inputs(profile:nil,history:counted).heroTime.isEmpty,"no profile, no hours")
         precondition(inputs().heroTime == inputs().modes.reduce(into:[String:Int]()) { t,m in for (h,s) in m.heroes { t[h,default:0]+=s } },"before Recall counts: the profile's own")
+        // Cardboard Support: Support main (45% or more of the hours, the most of any role) with more damage than healing.
+        var supportHours=history();supportHours.hours=HeroHours(since:day(20,18),heroes:["juno":60*3600,"ana":20*3600,"reinhardt":20*3600])
+        var hitter=profile();hitter.totals["competitive"]?.damage=900_000;hitter.totals["competitive"]?.healing=10;hitter.totals["quickplay"]?.damage=0;hitter.totals["quickplay"]?.healing=0
+        precondition(text(.title(.cardboardSupport),inputs(profile:hitter,history:supportHours)) == "Cardboard Support")
+        precondition(CardPiece.title(.cardboardSupport).progress(inputs(profile:hitter,history:supportHours))?.done == 1)
+        var healer=hitter;healer.totals["competitive"]?.healing=2_000_000
+        precondition(text(.title(.cardboardSupport),inputs(profile:healer,history:supportHours)) == nil)
+        let short=CardPiece.title(.cardboardSupport).progress(inputs(profile:healer,history:supportHours))
+        precondition(short != nil && short!.done < 1 && short!.needed?.contains("healing") == true,"\(String(describing:short))")
+        var tankHours=history();tankHours.hours=HeroHours(since:day(20,18),heroes:["reinhardt":80*3600,"juno":20*3600])
+        precondition(text(.title(.cardboardSupport),inputs(profile:hitter,history:tankHours)) == nil && CardPiece.title(.cardboardSupport).progress(inputs(profile:hitter,history:tankHours))!.done <= 0.5)
     }
 
     static func words() {
@@ -346,6 +357,11 @@ import Foundation
         var extra=DiscordCardDesign.standard;extra.pictures=CardArt.allCases.map { .art($0) }
         let letters={ (design:DiscordCardDesign) in DiscordCardCode.encode(design).filter { $0 != "-" }.count }
         precondition(back(extra) == extra && letters(extra)-letters(.standard) <= 18,DiscordCardCode.encode(extra))
+        // Every title, the newest included, in its three bits.
+        var titled=DiscordCardDesign.standard;titled.lineTwo=TitleLine.allCases.prefix(6).map { CardLine(piece:.title($0)) }
+        precondition(back(titled) == titled)
+        titled.lineTwo=[CardLine(piece:.title(.cardboardSupport))]
+        precondition(back(titled) == titled && TitleLine.allCases.count <= 8)
         var odd=DiscordCardDesign.standard;odd.pictures=[.hero("-x")]
         precondition(back(odd)?.pictures == [.hero("-x")])
         // Discord loads them from the repository, and the hover says which.
