@@ -52,8 +52,8 @@ final class FakeOverFast {
 
 @main struct CareerProfileTests {
     static func main() {
-        battleTags();answers();lastSession();cardText();lookUps();history();historyStore();servers()
-        print("PASS: BattleTags, OverFast's answers, the last session and its words, when the profile is looked up, the history and its file, and the servers")
+        battleTags();answers();lastSession();cardText();lookUps();history();heroHours();historyStore();servers()
+        print("PASS: BattleTags, OverFast's answers, the last session and its words, when the profile is looked up, the history and its file, the hours Recall counts, and the servers")
     }
 
     static func battleTags() {
@@ -182,12 +182,15 @@ final class FakeOverFast {
         precondition(card?.heroes["reinhardt"]?.name == "Reinhardt","the heroes' names and portraits from the first look")
         precondition(status == .found(card?.rank) && card?.rank?.role == .tank && card?.last == nil && card?.identity?.name == "Player")
         precondition(card?.page?.absoluteString == "https://overwatch.blizzard.com/en-us/career/Player-1234/" && profile.lastCode == 200)
+        precondition(profile.history.current.hours == HeroHours(since:t0,heroes:["reinhardt":12000,"juno":6000],seenGames:["competitive":20,"quickplay":10],
+                                                                seen:["competitive":["reinhardt":12000],"quickplay":["juno":6000]]),"the hours are counted from the first look's totals")
         // Within ten minutes nothing is asked: the same answer, from what was kept.
         (status,card)=look(profile,"Player#1234",at(9))
         precondition(fake.requests.count == 3 && card?.rank?.role == .tank)
         // Later, an unchanged profile asks the summary only.
         (status,card)=look(profile,"Player#1234",at(11))
         precondition(fake.requests.count == 4 && card?.last == nil)
+        precondition(profile.history.current.hours?.heroes == ["reinhardt":12000,"juno":6000],"an unchanged profile adds no hours")
         // The game ran twice meanwhile; the log saw 3 matches, then 1.
         profile.sessionEnded(PlayedRun(start:at(12),end:at(14),matches:3));profile.sessionEnded(PlayedRun(start:at(15),end:at(18),matches:1));settle(profile)
         precondition(profile.history.current.runs.map(\.matches) == [3,1],"every run goes into the history")
@@ -202,6 +205,7 @@ final class FakeOverFast {
         precondition(profile.history.current.looked == at(22) && profile.history.current.seasonPeak.first?.division == "diamond")
         precondition(profile.history.current.changes[0].rankSteps == 1 && profile.history.current.changes[0].rankMoves == ["tank":1],"each role's move is kept with the change")
         precondition(card?.totals["competitive"]?.games.played == 23 && card?.heroes["reinhardt"]?.role == .tank)
+        precondition(profile.history.current.hours?.heroes == ["reinhardt":13800,"juno":6000] && profile.history.current.hours?.since == t0,"a change adds its hours")
         // Kept across restarts of the app: a new profile on the same settings knows it, and asks nothing yet.
         let again=CareerProfile(base:URL(string:"https://overfast.test")!,store:store,fetch:fake.fetch)
         (status,card)=look(again,"Player#1234",at(25))
@@ -236,6 +240,7 @@ final class FakeOverFast {
         fake.answers["/players/Other-5678/summary"]=fake.ok(summary(updated:300,tank:nil,open:nil))
         profile.forget();settle(profile)
         precondition(profile.history.current.changes.isEmpty && profile.history.current.season == nil && profile.history.current.runs.count == 2,"this Mac's runs stay")
+        precondition(profile.history.current.hours == nil,"another player's hours start over")
         (status,card)=look(profile,"Other#5678",at(224))
         precondition(status == .found(nil) && card?.ranks.isEmpty == true && card?.last == nil && fake.requests.count == 15,"its own hero list: \(fake.requests.count)")
         fake.answers["/players/Other-5678"]=fake.ok(wholeProfile(competitive:Mode(played:1,won:1),quickplay:Mode(played:1,won:1)))
@@ -358,6 +363,37 @@ final class FakeOverFast {
         // A name that a spreadsheet would work out as a formula is kept as text.
         let formula=export.csv(heroes:["ana":CareerHero(name:"=HYPERLINK(\"x\")",portrait:nil,role:.support)],timeZone:calendar.timeZone)
         precondition(formula.contains(",\"'=HYPERLINK(\"\"x\"\")\",Support: Gold 1,"),formula)
+    }
+
+    /// The hours Recall counts: from the first look's totals, each look's gains mode by mode, and a mode that started
+    /// over (Competitive at a new season) all new. What an older Recall kept still reads, without them.
+    static func heroHours() {
+        func modes(comp:(Int,[String:Int]),quick:(Int,[String:Int]))->[String:ModeStats] {
+            ["competitive":ModeStats(games:Tally(played:comp.0),heroes:comp.1),"quickplay":ModeStats(games:Tally(played:quick.0),heroes:quick.1)]
+        }
+        let t0=Date(timeIntervalSince1970:1_800_000_000)
+        var history=CareerHistory()
+        history.count([:],at:t0)
+        precondition(history.hours == nil,"no totals, nothing counted")
+        history.count(modes(comp:(40,["ana":36000,"juno":7200]),quick:(10,["juno":3600])),at:t0)
+        precondition(history.hours?.heroes == ["ana":36000,"juno":10800] && history.hours?.since == t0)
+        // The same totals again add nothing; more of them add the difference.
+        history.count(modes(comp:(40,["ana":36000,"juno":7200]),quick:(10,["juno":3600])),at:t0.addingTimeInterval(60))
+        history.count(modes(comp:(42,["ana":37800,"juno":7200]),quick:(12,["juno":4200,"kiriko":900])),at:t0.addingTimeInterval(120))
+        precondition(history.hours?.heroes == ["ana":37800,"juno":11400,"kiriko":900] && history.hours?.since == t0,"\(String(describing:history.hours))")
+        // A new season: Competitive starts over, and what it has is all new; last season's hours stay.
+        history.count(modes(comp:(2,["juno":1200]),quick:(12,["juno":4200,"kiriko":900])),at:t0.addingTimeInterval(180))
+        precondition(history.hours?.heroes == ["ana":37800,"juno":12600,"kiriko":900],"\(String(describing:history.hours))")
+        history.count(modes(comp:(5,["juno":1500,"ana":600]),quick:(12,["juno":4200,"kiriko":900])),at:t0.addingTimeInterval(240))
+        precondition(history.hours?.heroes == ["ana":38400,"juno":12900,"kiriko":900],"a hero back in the new season counts from nothing")
+        // A history from before the hours were kept reads as it was, with none.
+        let older=#"{"runs":[{"start":"2027-01-15T08:00:00Z","end":"2027-01-15T09:00:00Z","matches":4}],"changes":[],"seasonFollows":false,"seasonFirst":[],"seasonPeak":[],"looked":"2027-01-15T09:00:00Z"}"#
+        let decoder=JSONDecoder();decoder.dateDecodingStrategy = .iso8601
+        let read=try! decoder.decode(CareerHistory.self,from:Data(older.utf8))
+        precondition(read.runs.count == 1 && read.hours == nil)
+        // Forgetting the profile forgets its hours.
+        history.forgetProfile()
+        precondition(history.hours == nil)
     }
 
     static func historyStore() {

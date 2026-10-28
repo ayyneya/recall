@@ -188,6 +188,8 @@ struct ProfileFact {
     var places:[String]=[]
     let facts:[Fact]
     var legend:String?=nil
+    /// What Recall counts itself (the hours): marked with Recall's icon, and said under the facts.
+    var counted:String?=nil
     var sample:String?=nil
     var sampleLabel:String?=nil
 }
@@ -207,6 +209,7 @@ private struct FactRow: View {
                     VStack(alignment:.leading,spacing:3) {
                         HStack(spacing:5) {
                             Text(row.name).designFont(12.5,.semibold).foregroundStyle(DiscordColors.body).fixedSize()
+                            if shown && row.counted != nil { AppArtwork(size:14).accessibilityLabel(L("Counted by Recall")) }
                             Spacer(minLength:0)
                             ForEach(row.places,id:\.self) { place in
                                 Text(place).designFont(10,.semibold).foregroundStyle(DiscordColors.ink(0.55))
@@ -279,6 +282,12 @@ private struct FactRow: View {
                 }
             }
             if let legend=row.legend { Text(legend).designFont(11,line:11*1.45,wraps:true).foregroundStyle(DiscordColors.ink(0.45)).fixedSize(horizontal:false,vertical:true) }
+            if let counted=row.counted {
+                HStack(alignment:.top,spacing:6) {
+                    AppArtwork(size:14).padding(.top,1)
+                    Text(counted).designFont(11,line:11*1.45,wraps:true).foregroundStyle(DiscordColors.ink(0.45)).fixedSize(horizontal:false,vertical:true)
+                }
+            }
             if let sample=row.sample {
                 HStack(spacing:8) {
                     Text(row.sampleLabel ?? L("On your card")).designFont(11).foregroundStyle(DiscordColors.ink(0.45)).fixedSize()
@@ -557,6 +566,12 @@ extension DiscordStudio {
         let top=inputs.topHeroes
         var heroes=top.prefix(8).map { key in ProfileFact.Fact(text:inputs.heroName(key),after:inputs.heroTime[key].map(inputs.hours),image:card?.heroes[key]?.portrait) }
         if top.count > 8 { heroes.append(.init(text:L("+ {0} more",String(top.count-8)))) }
+        // Recall's own count of the hours, once it has one (CardInputs.heroTime).
+        let counted=history.hours.flatMap { hours in
+            profile == nil || hours.heroes.isEmpty ? nil
+                : L("Quick Play and Competitive, as your profile has them. Recall has kept the count since {0}, so a new season doesn’t take hours away.",
+                    hours.since.formatted(.dateTime.month(.abbreviated).day()))
+        }
         let bests=BestLine.allCases.compactMap { line -> ProfileFact.Fact? in
             guard let value=line.value(inputs) else { return nil }
             let number=value.formatted(.number)
@@ -575,7 +590,8 @@ extension DiscordStudio {
         return [ProfileFact(icon:"ph:medal-fill",name:L("Ranks"),places:[L("Line 2"),L("Badge")],facts:ranks.isEmpty ? [.init(text:L("No rank this season"))] : ranks,
                             legend:L("Since your last session: ↑ up a division, ↟ two or more, – no change, ↓ down."),sample:sample(.rank(.current))),
                 ProfileFact(icon:"ph:sword-fill",name:L("Records"),places:[L("Line 2")],facts:records.isEmpty ? [.init(text:L("No games yet"))] : records,sample:sample(.record(.week,.competitive,winRate:false))),
-                ProfileFact(icon:"rc:user-fill",name:L("Heroes and hours"),places:[L("Image"),L("Line 2")],facts:heroes.isEmpty ? [.init(text:L("No heroes yet"))] : heroes,sample:sample(.hero(nil,.hours))),
+                ProfileFact(icon:"rc:user-fill",name:L("Heroes and hours"),places:[L("Image"),L("Line 2")],facts:heroes.isEmpty ? [.init(text:L("No heroes yet"))] : heroes,
+                            counted:counted,sample:sample(.hero(nil,.hours))),
                 ProfileFact(icon:"ph:trophy-fill",name:L("Best games"),places:[L("Line 2")],facts:bests.isEmpty ? [.init(text:L("No bests yet"))] : bests,sample:sample(.best(.eliminations))),
                 ProfileFact(icon:"lucide:image",image:card?.identity?.avatar,name:L("Player icon and title"),places:[L("Image")],facts:identity,
                             sample:[card?.identity?.name,card?.identity?.title].compactMap { $0 }.joined(separator:" · ").nilIfEmpty,sampleLabel:L("When friends point at the image"))]

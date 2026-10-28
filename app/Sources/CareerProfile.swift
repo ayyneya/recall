@@ -369,7 +369,10 @@ final class CareerProfile {
                     record.modes=modes;record.updated=summary.updated;record.matches=0
                 }
                 record.season=summary.season
-                self.history.update { $0.looked(at:now,season:summary.season,ranks:summary.ranks,change:change) }
+                // The hours are counted at every look (an unchanged profile adds nothing), so the count starts with
+                // the first look after an older Recall's too.
+                let modes=record.modes
+                self.history.update { $0.looked(at:now,season:summary.season,ranks:summary.ranks,change:change);$0.count(modes,at:now) }
                 finish(.found(card()?.rank),card())
             case 404:
                 record.notPublic=true;record.waitUntil=OverFast.notFoundUntil(answer.body,now:now)

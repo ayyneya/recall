@@ -75,9 +75,11 @@ extension CardInputs {
         }
     }
 
-    /// Each hero's time over both modes, all time (OverFast's keys).
+    /// Each hero's time over both modes, all time (OverFast's keys): as Recall has counted it (HeroHours), which a new
+    /// season doesn't take away, or the profile's own totals before it has.
     var heroTime:[String:Int] {
-        modes.reduce(into:[:]) { total,mode in for (hero,seconds) in mode.heroes { total[hero,default:0]+=seconds } }
+        if profile != nil,let counted=history.hours?.heroes,!counted.isEmpty { return counted }
+        return modes.reduce(into:[:]) { total,mode in for (hero,seconds) in mode.heroes { total[hero,default:0]+=seconds } }
     }
     /// The profile's totals, Competitive and Quick Play.
     var modes:[ModeStats] { profile.map { Array($0.totals.values) } ?? [] }

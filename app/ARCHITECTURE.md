@@ -450,7 +450,11 @@ shown, the role of Competitive's), eliminations, deaths, healing and damage, a "
 beaten, and a rank that moved (in the same season). The log adds what the profile can't: each run of
 the game reports its matches (`PresenceTracker.matches`, each counted once as a line shows it held), and
 the matches since the totals were taken, less the profile's, are the ones in other modes (Arcade, custom
-games); a session the log wasn't read in makes that unknown until the next totals. It asks at most once
+games); a session the log wasn't read in makes that unknown until the next totals. The profile holds only Quick
+Play and this season's Competitive, so the hours come from the history's own count (`HeroHours`): the first
+look's totals, then each look's gains mode by mode, a mode with fewer games than before (Competitive at a new
+season) counted as starting over; the card and Your profile use it (`CardInputs.heroTime`), marked there with
+Recall's icon. It asks at most once
 in ten minutes (OverFast's cache time): at Full and Customize, as the game opens, twelve minutes after it quits
 (Blizzard's update has come by then, so the next game's card has the session from the start) and as Recall opens
 with runs still waiting for one; at any level, when a BattleTag is entered and on Your profile's Look again, which
@@ -478,8 +482,8 @@ whether the match is competitive, which nothing can tell yet), so another source
 behind its own switch, adds facts there: a known competitive match puts the rank on it. The support report
 (schema 7) says whether a BattleTag is set and OverFast's last answer code, never the tag.
 `tests/CareerProfileTests.swift` covers the BattleTag, OverFast's answers, the last session with the
-log's match count, every lookup rule against a fake OverFast that counts requests, the history, its periods
-and its export; `tests/DiscordCardTests.swift` each piece's words, Full's card in the menus, in a match and in
+log's match count, every lookup rule against a fake OverFast that counts requests, the history, its periods,
+its hours and its export; `tests/DiscordCardTests.swift` each piece's words, Full's card in the menus, in a match and in
 the group's voice, the lists taking turns, the ready-made designs, cards kept by another Recall, and the codes.
 
 Settings › Discord (`DiscordSettings.swift`, its state in `DiscordStudio.swift`) is the Claude Design artifact

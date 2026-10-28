@@ -1137,6 +1137,8 @@
     "Records": "战绩",
     "No games yet": "还没有比赛",
     "Heroes and hours": "英雄与时长",
+    "Counted by Recall": "由 Recall 统计",
+    "Quick Play and Competitive, as your profile has them. Recall has kept the count since {0}, so a new season doesn’t take hours away.": "生涯资料中记录的快速比赛和竞技时长。Recall 从 {0} 起一直在累计，所以新赛季开始时时长不会减少。",
     "Best games": "最佳比赛",
     "No bests yet": "还没有最佳纪录",
     "Player icon and title": "玩家头像与称号",

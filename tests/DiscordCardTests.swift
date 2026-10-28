@@ -52,8 +52,18 @@ import Foundation
     static func assets(_ card:[String:Any])->[String:String] { card["assets"] as? [String:String] ?? [:] }
 
     static func main() {
-        words();defaultCard();inAMatch();groupVoice();turns();designs();codes()
-        print("PASS: each piece's words, Full's card in the menus, in a match and in the group's voice, the lists taking turns, the designs, and their codes")
+        words();defaultCard();inAMatch();groupVoice();turns();designs();codes();countedHours()
+        print("PASS: each piece's words, Full's card in the menus, in a match and in the group's voice, the lists taking turns, the designs, their codes, and the hours Recall counts")
+    }
+    /// Once Recall counts the hours, the card's hours are its count (a new season doesn't take them away), and without
+    /// the profile there are none.
+    static func countedHours() {
+        var counted=history();counted.hours=HeroHours(since:day(20,18),heroes:["ana":120*3600,"juno":3600])
+        let i=inputs(history:counted)
+        precondition(i.heroTime == ["ana":120*3600,"juno":3600] && i.topHeroes == ["ana","juno"])
+        precondition(text(.title(.hours),i) == "121h in Overwatch" && text(.title(.century),i) == "100 hours in","\(String(describing:text(.title(.hours),i)))")
+        precondition(inputs(profile:nil,history:counted).heroTime.isEmpty,"no profile, no hours")
+        precondition(inputs().heroTime == inputs().modes.reduce(into:[String:Int]()) { t,m in for (h,s) in m.heroes { t[h,default:0]+=s } },"before Recall counts: the profile's own")
     }
 
     static func words() {

@@ -1137,6 +1137,8 @@
     "Records": "전적",
     "No games yet": "아직 경기 없음",
     "Heroes and hours": "영웅과 플레이 시간",
+    "Counted by Recall": "Recall이 직접 센 시간",
+    "Quick Play and Competitive, as your profile has them. Recall has kept the count since {0}, so a new season doesn’t take hours away.": "프로필에 기록된 빠른 대전과 경쟁전 시간입니다. Recall이 {0}부터 계속 더해 왔기 때문에 새 시즌이 시작돼도 시간이 줄어들지 않습니다.",
     "Best games": "최고 기록",
     "No bests yet": "아직 최고 기록 없음",
     "Player icon and title": "플레이어 아이콘과 칭호",

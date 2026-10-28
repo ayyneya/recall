@@ -210,7 +210,9 @@ Settings lists everything Recall reads from it and where it shows on the card.
 What Recall remembers stays on your Mac, in one file in Recall's own Application Support folder: when each
 game session ran and how many matches the log counted, and, with a BattleTag, how your profile changed
 after each session (results, heroes' time, ranks, bests). The card uses it to tell today, this week or this
-season. Settings › Discord › What Recall remembers lists it, exports it to your Downloads folder as a
+season. It also keeps each hero's hours as Recall counts them: the profile has only Quick Play and this
+season's Competitive (never custom games), so Recall starts from what it shows and adds every session after,
+and a new season doesn't take hours away. Your profile page marks these hours with Recall's icon. Settings › Discord › What Recall remembers lists it, exports it to your Downloads folder as a
 spreadsheet, and erases it (hold for two seconds; you have ten seconds to undo). Recall also keeps your
 BattleTag and the profile's last totals in its settings, and your cards. A card you share is a code that
 holds only your choices for the card and its name, never your stats or your BattleTag. The support report

@@ -8,6 +8,7 @@ import Foundation
 // - the profile's changes (Full): each time a look finds the profile changed, how it changed, dated by the
 //   profile's own time, which is the second the game closed. A Monday night session first seen on Saturday
 //   is Monday's, wherever the look happened.
+// With them, each hero's hours as Recall counts them (HeroHours), which a new season doesn't take away.
 // One small file in Recall's own Application Support folder, on this Mac only (never in the settings,
 // which load at every launch). Both lists keep a little over a year; Erase removes the file.
 
@@ -49,6 +50,35 @@ struct ProfileChange: Codable, Equatable {
     }
 }
 
+/// Each hero's time as Recall counts it. The profile holds Quick Play and this season's Competitive only, so on its own a
+/// new season takes hours away: this starts from what the first look found, adds what each look after it gained, mode
+/// by mode, and never goes down. Custom games are never on the profile, so never in here.
+struct HeroHours: Codable, Equatable {
+    /// The look that started the count.
+    var since:Date
+    /// Seconds per hero (OverFast's keys).
+    var heroes:[String:Int]=[:]
+    /// What the last look found in each mode, which the next look's gains are counted from: its games, and each
+    /// hero's seconds.
+    var seenGames:[String:Int]=[:]
+    var seen:[String:[String:Int]]=[:]
+
+    /// A look found these totals.
+    mutating func count(_ modes:[String:ModeStats]) {
+        for (mode,stats) in modes {
+            let before=seen[mode] ?? [:]
+            // A mode with fewer games or less time than before started over (Competitive, at a new season): all of
+            // it is new.
+            let over=stats.games.played < seenGames[mode] ?? 0 || stats.heroes.values.reduce(0,+) < before.values.reduce(0,+)
+            for (hero,seconds) in stats.heroes {
+                let gained=over ? seconds : seconds-(before[hero] ?? 0)
+                if gained > 0 { heroes[hero,default:0]+=gained }
+            }
+            seen[mode]=stats.heroes;seenGames[mode]=stats.games.played
+        }
+    }
+}
+
 /// The times the card's records cover. All time is the profile's own totals (CareerCard), not the history's.
 enum CareerPeriod: String, Codable, CaseIterable { case last,today,week,season,all }
 
@@ -73,6 +103,8 @@ struct CareerHistory: Codable, Equatable {
     var seasonPeak:[CareerRank]=[]
     /// The last look that found the profile.
     var looked:Date?
+    /// Each hero's time as Recall has counted it; nil until a look has (and in what an older Recall kept).
+    var hours:HeroHours?
 
     /// A run of the game ended.
     mutating func ran(_ run:PlayedRun) {
@@ -99,6 +131,12 @@ struct CareerHistory: Codable, Equatable {
         }
         looked=time
     }
+    /// A look found the profile with these totals: their hours are counted (from these, at the first).
+    mutating func count(_ modes:[String:ModeStats],at time:Date) {
+        guard !modes.isEmpty else { return }
+        var hours=self.hours ?? HeroHours(since:time)
+        hours.count(modes);self.hours=hours
+    }
     /// The runs since the last change the profile told (all of them before one was), whose records come with the
     /// next look that finds it changed. A run the profile changed during belongs to that change.
     var waiting:[PlayedRun] { let last=changes.last?.at ?? .distantPast;return runs.filter { $0.start > last } }
@@ -110,7 +148,7 @@ struct CareerHistory: Codable, Equatable {
     }
     /// The BattleTag changed: what the old profile said goes, and this Mac's runs stay.
     mutating func forgetProfile() {
-        changes=[];season=nil;seasonSeen=nil;seasonFollows=false;seasonFirst=[];seasonPeak=[];looked=nil
+        changes=[];season=nil;seasonSeen=nil;seasonFollows=false;seasonFirst=[];seasonPeak=[];looked=nil;hours=nil
     }
 
     /// What the changes in a period add up to; nil when none falls in it. All time gives nil: the profile's
