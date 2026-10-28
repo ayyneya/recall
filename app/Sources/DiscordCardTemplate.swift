@@ -53,12 +53,12 @@ enum CardArt: String, Codable, CaseIterable {
         case .jetpackCat: return "JetpackCat.gif"
         }
     }
-    /// Its name, as heroes' names are shown (the game's own).
+    /// Its name, as heroes' names are shown (the game's own, in English everywhere).
     var name:String {
         switch self {
         case .juno: return "Juno"
         case .winston: return "Winston"
-        case .jetpackCat: return "Jetpack Cat"
+        case .jetpackCat: return L("Jetpack Cat")
         }
     }
     /// Its letter in a card's code (DiscordCardCode): after a dash, in a hero key's place, as no hero's key starts so.
