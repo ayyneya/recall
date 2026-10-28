@@ -344,13 +344,16 @@ struct CatalogRowState {
     let progress:(done:Double,earned:String?,needed:String?)?
     let when:(icon:String?,text:String)?
     let note:(text:String,icon:String)?
+    /// The time its numbers cover, and what Recall is still building for it.
+    let period:String?
+    let learning:String?
     let icon:String
     let filled:Bool
     let hold:HoldMode?
     let weight:Int
     /// It needs the profile, which can't be read: it can't be added, or put in place of another, till it can.
     let blocked:Bool
-    var tall:Bool { when != nil || bar }
+    var tall:Bool { when != nil || learning != nil || bar }
     @MainActor init(studio:DiscordStudio,piece:CardPiece,inputs:CardInputs,sample:CardInputs) {
         let design=studio.design,place=design.lineTwo.firstIndex { $0.piece == piece }
         open=studio.openLine.flatMap { design.lineTwo.indices.contains($0) ? $0 : nil }
@@ -369,6 +372,8 @@ struct CatalogRowState {
         let quiet=(piece.topic == .moment && (avail == .news || avail == .ok)) || avail == .locked || bar
         note=quiet ? nil : studio.note(avail)
         text=piece == .highlights ? L("Dynamic") : studio.sampleText(piece,sample)
+        period=piece.period
+        learning=when == nil ? piece.learning(inputs) : nil
         blocked=avail == .profile && !on && !current
         number=on && !changing ? (place ?? 0)+1 : nil
         icon=changing ? (current ? "lucide:check" : blocked ? "lucide:lock" : "lucide:arrow-right") : bar ? "rc:key" : avail == .locked || blocked ? "lucide:lock" : "lucide:plus"
@@ -381,7 +386,19 @@ private struct CatalogRowText: View {
     let row:CatalogRowState
     var body:some View {
         VStack(alignment:.leading,spacing:3) {
-            Text(verbatim:row.text).discordFont(13.5,row.weight).lineLimit(1)
+            HStack(spacing:6) {
+                Text(verbatim:row.text).discordFont(13.5,row.weight).lineLimit(1)
+                if let period=row.period {
+                    Text(period).designFont(10,.semibold).foregroundStyle(DiscordColors.ink(0.5)).fixedSize()
+                        .padding(.horizontal,5).frame(height:16).background(DiscordColors.veil(0.06),in:RoundedRectangle(cornerRadius:5))
+                }
+            }
+            if let learning=row.learning,!row.bar {
+                HStack(spacing:6) {
+                    DesignIcon("lucide:hourglass",size:10)
+                    Text(learning).designFont(11).lineLimit(1)
+                }.foregroundStyle(DiscordColors.ink(0.5))
+            }
             if let when=row.when,!row.bar {
                 HStack(spacing:6) {
                     if let icon=when.icon { DesignIcon(icon,size:10).foregroundStyle(icon == "rc:pick" ? DiscordColors.link : Color(red:1,green:190/255,blue:92/255)) }

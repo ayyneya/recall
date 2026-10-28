@@ -865,7 +865,8 @@ extension DiscordStudio.Topic {
         case .hero: return HeroLine.allCases.map { .hero(hero,$0) }
         case .best: return [BestLine.eliminations,.damage,.healing,.killStreak,.multikill].map { .best($0) }
         case .tonight: return TonightLine.allCases.map { .tonight($0) }
-        case .title: return TitleLine.allCases.map { .title($0) }
+        // One-trick is the top of "main" now (the hero's own line), not a title of its own.
+        case .title: return TitleLine.allCases.filter { $0 != .oneTrick }.map { .title($0) }
         }
     }
 }
@@ -979,14 +980,15 @@ extension CardPiece {
             case .today: text=L("{0} record, today",modes)
             case .week: text=L("{0} record, this week",modes)
             case .season: text=L("{0} record, this season",modes)
-            case .all: text=L("{0} record, all time",modes)
+            // The profile's Competitive is this season's only.
+            case .all: text=mode == .competitive ? L("Comp record, this whole season") : L("{0} record, all time",modes)
             }
             if winRate && mode != .both { text=L("{0}, with win rate",text) }
             return text
         case .hero(let key,let line):
             let name=key.map { DiscordStudio.heroName($0) } ?? L("your most-played hero")
             switch line {
-            case .main: return L("{0} is your most-played hero",name)
+            case .main: return L("{0} main, and one-trick past half your hours",name)
             case .hours: return L("Your hours on {0}",name)
             case .role: return L("{0}’s role, and your hours",name)
             case .winRate: return L("Your win rate on {0}",name)
@@ -1028,6 +1030,40 @@ extension CardMoment {
         case .milestone: return L("At 10, 25, 50, 100… hours on a hero")
         case .comeback: return L("First game after 3+ days away")
         case .newSeason: return L("First game of a new season")
+        }
+    }
+}
+extension CardPiece {
+    /// The time a line's numbers cover, tagged beside it in Customize's lists. The profile's Competitive is this
+    /// season's only, so "all time" Competitive is this season.
+    var period:String? {
+        switch self {
+        case .rank: return L("This season")
+        case .record(let period,let mode,_):
+            switch period {
+            case .last: return L("Last session")
+            case .today: return L("Today")
+            case .week: return L("This week")
+            case .season: return L("This season")
+            case .all: return mode == .competitive ? L("This season") : L("All time")
+            }
+        case .tonight(.matches): return L("Tonight")
+        case .tonight(.week): return L("This week")
+        default: return nil
+        }
+    }
+    /// What Recall builds as it goes, under the line: the hours it counts, and the lines it learns from the sessions it
+    /// sees (while it has seen fewer than ten).
+    func learning(_ i:CardInputs)->String? {
+        switch self {
+        case .hero(_,.hours),.hero(_,.main),.hero(_,.role),.title(.hours),.title(.century),.title(.roleMain),.title(.flex),.title(.oneTrick):
+            guard i.profile != nil,let hours=i.history.hours,!hours.heroes.isEmpty else { return nil }
+            return L("Counted by Recall since {0}",hours.since.formatted(.dateTime.month(.abbreviated).day()))
+        case .record(.today,_,_),.record(.week,_,_),.record(.season,_,_),.rank(.climb),.rank(.peak),.tonight(.nights),.tonight(.week):
+            let seen=i.history.runs.count
+            guard seen < 10 else { return nil }
+            return seen == 1 ? L("Learning · 1 session so far") : L("Learning · {0} sessions so far",String(seen))
+        default: return nil
         }
     }
 }

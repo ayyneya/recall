@@ -191,8 +191,10 @@ extension CardPiece {
             guard let hero=key ?? i.topHeroes.first,let time=i.heroTime[hero],time >= 60 else { return nil }
             let name=i.heroName(hero)
             switch line {
-            // "Main" is earned: only the most-played hero has it.
-            case .main: return hero == i.topHeroes.first ? L("{0} main",name) : nil
+            // "Main" is earned: only the most-played hero has it; past half the hours, it's one-trick.
+            case .main:
+                guard hero == i.topHeroes.first else { return nil }
+                return Double(time) > Double(i.heroTime.values.reduce(0,+))*0.5 ? L("{0} one-trick",name) : L("{0} main",name)
             case .hours: return L("{0} · {1}",name,i.hours(time))
             case .role:
                 let rest="\(name) \(i.hours(time))"
@@ -281,7 +283,12 @@ extension CardPiece {
         case .hero(let key,.main):
             guard let top=i.topHeroes.first,let topTime=i.heroTime[top] else { return nil }
             let hero=key ?? top,time=i.heroTime[hero] ?? 0
-            if hero == top { return (1,L("Earned: your most-played hero, {0}",i.hours(time)),nil) }
+            if hero == top {
+                // One ladder: main, then one-trick past half the hours.
+                let share=Double(time)/Double(max(1,i.heroTime.values.reduce(0,+)))
+                return share > 0.5 ? (1,L("Earned: one-trick, {0}% of your hours",percent(share)),nil)
+                                   : (1,L("Earned: main, {0}. One-trick past half your hours ({1}% now)",i.hours(time),percent(share)),nil)
+            }
             return (min(0.97,Double(time)/Double(topTime)),nil,L("{0} {1}. Your most-played, {2}, has {3}.",i.heroName(hero),i.hours(time),i.heroName(top),i.hours(topTime)))
         default: return nil
         }
