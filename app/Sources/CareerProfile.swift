@@ -170,6 +170,9 @@ struct CareerCard: Equatable {
 /// OverFast's answers, read.
 enum OverFast {
     static let standard=URL(string:"https://overfast-api.tekrop.fr")!
+    /// The most any stat is taken as (a self-hosted OverFast can say anything): far above any player's totals, and low
+    /// enough that adding them up (a hero's hours, kept and added to at every look) never overflows.
+    static let most=1_000_000_000
     /// `/players/{id}/summary`: the profile's time (Unix seconds), its PC competitive ranks and season,
     /// and who the player is.
     static func summary(_ data:Data)->(updated:Int,ranks:[CareerRank],season:Int?,identity:CareerIdentity?)? {
@@ -200,7 +203,7 @@ enum OverFast {
                 let categories=career[hero] as? [[String:Any]] ?? []
                 let stats=categories.first { $0["category"] as? String == category }?["stats"] as? [[String:Any]] ?? []
                 return stats.reduce(into:[:]) { result,stat in
-                    if let key=stat["key"] as? String,result[key] == nil,let value=(stat["value"] as? NSNumber)?.intValue { result[key]=value }
+                    if let key=stat["key"] as? String,result[key] == nil,let value=(stat["value"] as? NSNumber)?.intValue { result[key]=min(max(value,0),most) }
                 }
             }
             let game=values("all-heroes","game"),combat=values("all-heroes","combat"),assists=values("all-heroes","assists")

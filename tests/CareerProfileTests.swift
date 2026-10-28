@@ -78,6 +78,12 @@ final class FakeOverFast {
         let insecure=OverFast.summary(json(plain))!
         precondition(insecure.ranks.map(\.role) == [.open] && insecure.identity?.avatar == nil && insecure.identity?.namecard == nil)
         precondition(OverFast.summary(json(["error":"Player not found"])) == nil && OverFast.summary(Data("<html>".utf8)) == nil)
+        // Stats out of all reason (a self-hosted OverFast) are held to a most, so nothing adding them up overflows.
+        let wild=OverFast.profile(wholeProfile(competitive:Mode(played:Int.max,elims:-5,heroes:["ana":Int.max]),quickplay:Mode(heroes:["juno":Int.max])))!
+        precondition(wild["competitive"]?.heroes["ana"] == OverFast.most && wild["competitive"]?.games.played == OverFast.most && wild["competitive"]?.eliminations == 0)
+        var counted=CareerHistory()
+        for _ in 0..<3 { counted.count(wild,at:Date()) }
+        precondition(counted.hours?.heroes == ["ana":OverFast.most,"juno":OverFast.most])
         // The whole profile: each mode's totals, records and heroes' time.
         let modes=OverFast.profile(wholeProfile(competitive:Mode(played:98,won:45,lost:52,elims:1760,deaths:588,damage:739031,healing:594755,bests:["eliminations_most_in_game":46],heroes:["ana":10615,"juno":12822]),
                                                 quickplay:Mode(played:578,won:297,lost:281,heroes:["juno":42800])))!
