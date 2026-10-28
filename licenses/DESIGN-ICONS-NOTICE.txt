@@ -71,3 +71,8 @@ data comes from; this project does not claim the marks or imply endorsement.
 The design's own icons ("rc": cards, line1, line2, buttons, hold, pick, live, key,
 id-fill, moon-fill, user-fill, ff, shield-fill, crown-fill, plus-fill,
 check-fill) were drawn for Recall and are covered by its Apache License 2.0.
+
+Overwatch's role icons (ow:tank, ow:damage, ow:support): Blizzard Entertainment's own,
+as https://overfast-api.tekrop.fr/roles lists them, transcribed here to name the roles in
+Settings › Discord › Customize. Overwatch and its role icons are trademarks of Blizzard
+Entertainment, Inc.; Recall is not affiliated with Blizzard.

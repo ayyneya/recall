@@ -627,10 +627,12 @@ private struct ImageTabs: View {
                 HStack(spacing:1) {
                     ForEach([CareerRank.Role.tank,.damage,.support],id:\.self) { role in
                         let on=studio.role == role
+                        // The role's own icon, its name when pointed at: the names didn't fit beside the tabs.
                         Button { studio.role=role;studio.allHeroes=false } label: {
-                            Text(role.label).designFont(11.5,.semibold).foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.55))
+                            DesignIcon("ow:"+role.rawValue,size:13).foregroundStyle(on ? DiscordColors.bright : DiscordColors.ink(0.55))
                                 .padding(.horizontal,8).frame(height:22).background(on ? DiscordColors.veil(0.14) : .clear,in:RoundedRectangle(cornerRadius:6))
-                        }.buttonStyle(.plain)
+                                .contentShape(Rectangle())
+                        }.buttonStyle(.plain).designTip(role.label).accessibilityLabel(role.label)
                     }
                 }
                 .padding(2).background(DiscordColors.veil(0.05),in:RoundedRectangle(cornerRadius:8)).padding(.leading,-4)
