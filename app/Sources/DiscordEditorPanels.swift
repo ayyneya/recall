@@ -404,9 +404,11 @@ private struct EarnBar: View {
             GeometryReader { box in
                 ZStack(alignment:.leading) {
                     Capsule().fill(DiscordColors.veil(0.08))
+                    // Grown by its own animation, not one from onAppear that the rest of the panel would ride (see PartArrival).
                     Capsule().fill(fill).frame(width:grown ? box.size.width*min(1,done) : 0)
+                        .animation(.timingCurve(0.22,1,0.36,1,duration:1.1).delay(0.15),value:grown)
                 }
-            }.frame(height:4).onAppear { withAnimation(.timingCurve(0.22,1,0.36,1,duration:1.1).delay(0.15)) { grown=true } }
+            }.frame(height:4).onAppear { grown=true }
             Text(ready ? L("You’ve earned it. Click the key to unlock it.") : needed ?? "").designFont(10.5).lineLimit(1)
                 .foregroundStyle(ready ? Color(red:1,green:176/255,blue:128/255) : DiscordColors.ink(0.5))
         }

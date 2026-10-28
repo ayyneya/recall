@@ -14,9 +14,9 @@ struct DiscordEditor: View {
                     PanelScroller { EditorPanel(studio:studio).padding(.horizontal,2).padding(.bottom,12) }
                 }
                 .padding(.top,12).frame(maxHeight:.infinity,alignment:.top)
-                // Back from My cards, under the stage as it shrinks back. Going to it, they stay while the stage grows over
-                // them, pushed down and out of sight, as the design's are (a half point's ride keeps them for the move).
-                .popIn(0.42).transition(.asymmetric(insertion:.ride(CardStage.height(.editor,gallery:true)-CardStage.height(.editor,gallery:false)),removal:.ride(0.5)))
+                // Back from My cards, under the stage as it shrinks back. Going to it, they go at once, as the design's do,
+                // and the stage grows into the room.
+                .popIn(0.42).transition(.asymmetric(insertion:.ride(CardStage.height(.editor,gallery:true)-CardStage.height(.editor,gallery:false)),removal:.identity))
             }
         }
         // Its room and no more, while the stage still shrinks over it (AnyTransition.ride): the rail, which can't shrink,
@@ -76,7 +76,8 @@ struct DiscordPageHeader: View {
                         DesignIcon("rc:cards",size:18).foregroundStyle(DiscordColors.link)
                             .frame(width:30,height:30).background(DiscordColors.accent.opacity(studio.gallery ? 0.24 : 0.12),in:RoundedRectangle(cornerRadius:9))
                         Text(studio.gallery ? L("My cards") : studio.design.shownName).designFont(24,.bold).tracking(-0.7).lineLimit(1)
-                            .foregroundStyle(DiscordColors.body).contentTransition(.opacity)
+                            // The name changes at once, as the design's does: crossfaded, the two words sat over each other.
+                            .foregroundStyle(DiscordColors.body).contentTransition(.identity)
                             .onGeometryChange(for:CGRect.self) { $0.frame(in:.named(LauncherStyle.sheetSpace)) } action:{ frame in
                                 studio.foldFrames[.cardTitle]=frame.offsetBy(dx:0,dy:studio.screen == .home ? -HeaderFold.chrome : 0)
                             }

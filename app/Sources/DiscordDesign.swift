@@ -373,15 +373,16 @@ struct PartArrival: ViewModifier {
         _from=State(initialValue:arrival?.start ?? ArrivalStart());_waiting=State(initialValue:onAppear && arrival != nil)
     }
     func body(content:Content)->some View {
-        content.modifier(ArrivalEffect(phase:runs,runs:runs,from:from,waiting:waiting))
+        // The animation is the arriving view's alone. A withAnimation here would carry everything else that changes in the
+        // same update, and as a sheet or My cards first lays out, that's whole pages, sliding in from their corner.
+        content.modifier(ArrivalEffect(phase:runs,runs:runs,from:from,waiting:waiting)).animation(arrival?.animation,value:runs)
             .onAppear {
-                guard waiting,let arrival else { return }
-                withAnimation(arrival.animation) { waiting=false;runs+=1 }
+                guard waiting,arrival != nil else { return }
+                waiting=false;runs+=1
             }
             .onChange(of:trigger) {
                 guard let arrival else { return }
-                from=arrival.start
-                withAnimation(arrival.animation) { runs+=1 }
+                from=arrival.start;runs+=1
             }
     }
 }
