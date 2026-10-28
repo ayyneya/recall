@@ -422,7 +422,6 @@ private struct TrailingMark: View {
     let filled:Bool
     let dim:Bool
     let pulse:Bool
-    @State private var beat=false
     var body:some View {
         ZStack {
             if let number { Text("\(number)").designFont(11,.heavy).monospacedDigit() } else { DesignIcon(icon,size:12) }
@@ -433,8 +432,7 @@ private struct TrailingMark: View {
         .overlay { if !filled { Circle().strokeBorder(DiscordColors.veil(0.16),lineWidth:1.5) } }
         .overlay { if pulse { Circle().strokeBorder(DiscordColors.accent.opacity(0.22),lineWidth:3).padding(-3) } }
         .compositingGroup().shadow(color:pulse ? DiscordColors.accent.opacity(0.55) : .clear,radius:7)
-        .scaleEffect(pulse && beat ? 1.12 : 1)
-        .onAppear { if pulse { withAnimation(.easeInOut(duration:0.9).repeatForever()) { beat=true } } }
+        .swaying(0.9,on:pulse) { mark,beat in mark.scaleEffect(1+0.12*beat) }
         .animation(.easeOut(duration:0.25),value:filled)
     }
 }

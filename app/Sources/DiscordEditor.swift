@@ -435,11 +435,9 @@ struct PanelScroller<Content:View>: View {
     }
 }
 private struct BobbingChevron: View {
-    @State private var down=false
     var body:some View {
         DesignIcon("lucide:chevron-down",size:15).foregroundStyle(DiscordColors.ink(0.7))
-            .offset(y:down ? 2 : -1).frame(width:30,height:20).contentShape(Rectangle())
-            .onAppear { withAnimation(.easeInOut(duration:0.8).repeatForever()) { down=true } }
+            .swaying(0.8) { chevron,down in chevron.offset(y:-1+3*down) }.frame(width:30,height:20).contentShape(Rectangle())
     }
 }
 

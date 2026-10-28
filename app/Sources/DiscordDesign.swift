@@ -487,6 +487,15 @@ extension View {
     func fadeIn(_ duration:Double,delay:Double=0)->some View {
         modifier(PartArrival(trigger:nil,(ArrivalStart(opacity:0),Animation.cssEase(duration).delay(delay))))
     }
+    /// To and fro while `on`, eased, `half` seconds each way: `apply` gets 0, 1, 0… It keeps its own clock, as the Ping
+    /// does. A repeatForever started in onAppear carries whatever else changes in that update, and when Settings is still
+    /// sizing itself as it opens, that's the whole sheet: it slides in from its corner, again and again.
+    func swaying<Content:View>(_ half:Double,on:Bool=true,@ViewBuilder _ apply:@escaping (PlaceholderContentView<Self>,Double)->Content)->some View {
+        keyframeAnimator(initialValue:0.0,repeating:on,content:apply) { _ in
+            LinearKeyframe(1.0,duration:half,timingCurve:.easeInOut)
+            LinearKeyframe(0.0,duration:half,timingCurve:.easeInOut)
+        }
+    }
 }
 
 /// Text set as the design's browser sets it (Chrome, at 2x): a line's ascent and descent are the font's, each rounded to

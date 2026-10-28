@@ -67,14 +67,12 @@ struct DotPattern: Shape {
 struct SceneChip: View {
     @Bindable var studio:DiscordStudio
     @State private var inside=false
-    @State private var pulse=false
     var body:some View {
         let match=studio.sceneName == studio.texts.match
         Button { studio.nextScene() } label: {
             HStack(spacing:6) {
                 if studio.live != nil {
-                    Circle().fill(DiscordColors.online).frame(width:6,height:6).opacity(pulse ? 0.35 : 1)
-                        .onAppear { withAnimation(.easeInOut(duration:0.8).repeatForever()) { pulse=true } }
+                    Circle().fill(DiscordColors.online).frame(width:6,height:6).swaying(0.8) { dot,dim in dot.opacity(1-0.65*dim) }
                 }
                 DesignIcon(match ? "ph:sword-fill" : "ph:squares-four-fill",size:match ? 12.5 : 14)
                 Text(studio.sceneName).designFont(11.5,.semibold)
@@ -245,15 +243,17 @@ struct MarchingOutline: View {
     var delay:Double=0
     @State private var shown=false
     @State private var present=false
-    @State private var phase:CGFloat=0
     var body:some View {
         GeometryReader { box in
             if present {
                 let outline=CardOutline(inset:0.75,radius:7.25),period=outline.period(in:box.size)
-                outline.stroke(LinearGradient(stops:CardOutline.colors,startPoint:.bottom,endPoint:.top),
-                               style:StrokeStyle(lineWidth:1.5,lineCap:.round,dash:[period/2,period/2],dashPhase:phase*period))
-                    // A period on from wherever the dashes are: the same march each time it comes back.
-                    .onAppear { withAnimation(.linear(duration:1.2*period/10).repeatForever(autoreverses:false)) { phase-=1 } }
+                // A period each 1.2 s per ten points, off the clock (see swaying: a repeatForever from here took the sheet
+                // along when Settings opened on the card).
+                TimelineView(.animation) { time in
+                    let march=period > 0 ? time.date.timeIntervalSinceReferenceDate/(1.2*period/10) : 0
+                    outline.stroke(LinearGradient(stops:CardOutline.colors,startPoint:.bottom,endPoint:.top),
+                                   style:StrokeStyle(lineWidth:1.5,lineCap:.round,dash:[period/2,period/2],dashPhase:-march.truncatingRemainder(dividingBy:1)*period))
+                }
             }
         }
         // Coming back with Discord's tab, it shows on the card as the card still moves into place.
