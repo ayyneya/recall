@@ -769,10 +769,13 @@ struct StudioMorph: View {
             let a:Look=fold.opening ? .word : .title,b:Look=fold.opening ? .title : .word
             let size=size(a)+(size(b)-size(a))*e,tracking=tracking(a)+(tracking(b)-tracking(a))*e
             let line=CGRect(x:word.minX,y:row.minY+30,width:word.width,height:3)
+            // The word whitens on the way to the title's colour (most of it in the first fifth, as the player asked), so
+            // the two crossfade as one colour rather than the ribbon lying over the title; coming back, the reverse.
+            let white=Self.whiten(fold.opening ? p : 1-p)
             ZStack(alignment:.topLeading) {
                 ZStack(alignment:.topLeading) {
-                    layer(a,size:size,tracking:tracking).opacity(1-k)
-                    layer(b,size:size,tracking:tracking).opacity(k)
+                    layer(a,size:size,tracking:tracking,white:white).opacity(1-k)
+                    layer(b,size:size,tracking:tracking,white:white).opacity(k)
                 }
                 .frame(width:0,height:0,alignment:.leading).position(x:x,y:y)
                 // Hidden where the card is now, as it moves.
@@ -787,18 +790,25 @@ struct StudioMorph: View {
             }
         }
     }
+    /// How white the word is, `p` of the way to the title: 0.85 by a fifth (smoothly), then on to all of it.
+    static func whiten(_ p:Double)->Double {
+        let p=min(1,max(0,p))
+        if p <= 0.2 { let x=p/0.2;return 0.85*x*x*(3-2*x) }
+        return 0.85+0.15*(p-0.2)/0.8
+    }
     private func size(_ look:Look)->CGFloat { look == .word ? 14 : 24 }
     private func tracking(_ look:Look)->CGFloat { look == .word ? 0 : -0.7 }
     /// A layer's text, its leading edge at the middle of a frame with no size, its middle across it, its size in a 16th of
     /// a point's steps (HeaderFoldTexts). The word keeps its ribbon: as it was when the word left, or moving as the
     /// word's own does when it's coming back.
-    @ViewBuilder private func layer(_ look:Look,size:CGFloat,tracking:CGFloat)->some View {
+    @ViewBuilder private func layer(_ look:Look,size:CGFloat,tracking:CGFloat,white:Double)->some View {
         let font=Font(SystemFont.nsFont((size*16).rounded()/16,700))
         Group {
             if look == .word {
                 let words=DiscordPresenceLevel.custom.title
                 SwiftUI.Text(words).font(font).tracking(tracking).foregroundStyle(.clear)
                     .overlay { RibbonLine(rounded:false,still:fold.opening ? fold.at : nil).mask { SwiftUI.Text(words).font(font).tracking(tracking) } }
+                    .overlay { SwiftUI.Text(words).font(font).tracking(tracking).foregroundStyle(DiscordColors.body).opacity(white) }
             } else {
                 SwiftUI.Text(fold.title).font(font).tracking(tracking).foregroundStyle(DiscordColors.body)
             }
