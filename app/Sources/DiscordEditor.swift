@@ -111,6 +111,10 @@ struct CardStage: View {
             }
         } controls: {
             if !home && !studio.gallery { DeviceToggle(studio:studio).transition(.atOnce) }
+            // On Discord's tab too (the player asked for it there): the card's pictures and badge say more when pointed at.
+            if home && studio.power && !studio.hoverSeen {
+                StageChip(icon:"lucide:mouse",text:L("Point at pictures"),nudge:true).allowsHitTesting(false).fadeIn(0.5,delay:0.8).transition(.identity)
+            }
         }
         .overlay(alignment:.topLeading) {
             if !home && !studio.gallery {
