@@ -72,7 +72,8 @@ struct DiscordPageHeader: View {
         HStack(spacing:8) {
             if studio.pageShown == .editor {
                 Button { studio.openGallery(!studio.gallery) } label: {
-                    HStack(spacing:9) {
+                    // Fourteen points between the icon and the name, not the design's nine: the player found them too close.
+                    HStack(spacing:14) {
                         DesignIcon("rc:cards",size:18).foregroundStyle(DiscordColors.link)
                             .frame(width:30,height:30).background(DiscordColors.accent.opacity(studio.gallery ? 0.24 : 0.12),in:RoundedRectangle(cornerRadius:9))
                         Text(studio.gallery ? L("My cards") : studio.design.shownName).designFont(24,.bold).tracking(-0.7).lineLimit(1)
