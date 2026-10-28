@@ -170,8 +170,8 @@ struct CardStage: View {
                 }
                 .scaleEffect(gallery ? 0.86 : 1)
                 // A step in My cards: the next comes in from where its neighbour was, at 0.6 (the one before goes at once:
-                // its neighbour takes its place).
-                .modifier(PartArrival(trigger:nil,gallery ? studio.gallerySlide.flatMap { $0.moving ? (ArrivalStart(x:$0.way*277,opacity:0.9,scale:0.6/0.86),DiscordGallery.slide) : nil } : nil))
+                // its neighbour takes its place). Put back, a card pops back in the middle.
+                .modifier(PartArrival(trigger:nil,gallery ? DiscordGallery.cardArrival(studio.gallerySlide) : nil))
                 .id(studio.galleryItem?.design.id)
                 .transition(.identity)
                 .padding(.bottom,gallery ? DiscordGallery.caption : 0)

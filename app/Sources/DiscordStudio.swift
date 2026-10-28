@@ -80,7 +80,12 @@ import Observation
     var galleryIndex:Int?
     /// The last step through My cards, and which way: the cards slide along with it (the design's carousel). A card
     /// added or deleted since moves nothing.
-    struct GallerySlide: Equatable { let id=UUID();let way:CGFloat;var moving=true }
+    /// A move in My cards: a step to a neighbour, a card deleted (the next comes in from its side), or put back (it
+    /// comes back in the middle, and the card that had taken its place goes back to its side).
+    struct GallerySlide: Equatable {
+        enum Kind { case step,delete,restore }
+        let id=UUID();let way:CGFloat;var moving=true;var kind=Kind.step
+    }
     var gallerySlide:GallerySlide?
     var slot:Slot = .lineTwo
     var openLine:Int?
@@ -108,10 +113,14 @@ import Observation
     /// A card just deleted in My cards, while it can be undone (its button shows Undo, counting down).
     struct DeleteUndo {
         static let window:TimeInterval=6
+        /// How long Undo takes to spin away once its seconds have run out.
+        static let spin:TimeInterval=0.9
         let before:DiscordCardShelf
         let place:Int
         let text:String
         let at=Date()
+        /// When its seconds ran out, while it spins away.
+        var leaving:Date?
         var until:Date { at.addingTimeInterval(Self.window) }
     }
     var deleteUndo:DeleteUndo?
@@ -689,19 +698,23 @@ import Observation
         let before=shelf,wasInUse=item.design.id == shelf.inUse.id,place=galleryPlace
         if item.readyMade { shelf.hidden.append(item.design.id) } else { shelf.mine.removeAll { $0.id == item.design.id } }
         if wasInUse { shelf.chosen=galleryItems.first?.design.id ?? "default" }
-        galleryIndex=min(place,max(0,galleryItems.count-1));gallerySlide?.moving=false;sharing=false;renaming=nil;shift=0;galleryStart=Date()
+        // The card after it comes in from its side, so it's plain the card shown is another one now.
+        galleryIndex=min(place,max(0,galleryItems.count-1));gallerySlide=GallerySlide(way:1,kind:.delete);sharing=false;renaming=nil;shift=0;galleryStart=Date()
         let undo=DeleteUndo(before:before,place:place,text:wasInUse ? L("Deleted. Now using “{0}”.",shelf.inUse.shownName) : L("Deleted"))
         deleteUndo=undo;undoEnds?.cancel()
         undoEnds=Task { [weak self] in
             try? await Task.sleep(for:.seconds(DeleteUndo.window))
-            if !Task.isCancelled,self?.deleteUndo?.at == undo.at { withAnimation(.easeOut(duration:0.25)) { self?.deleteUndo=nil } }
+            guard !Task.isCancelled,self?.deleteUndo?.at == undo.at else { return }
+            self?.deleteUndo?.leaving=Date()
+            try? await Task.sleep(for:.seconds(DeleteUndo.spin))
+            if !Task.isCancelled,self?.deleteUndo?.at == undo.at { withAnimation(.easeOut(duration:0.2)) { self?.deleteUndo=nil } }
         }
     }
     /// Delete's Undo in My cards: the card back where it was.
     func undoDelete() {
-        guard let undo=deleteUndo else { return }
+        guard let undo=deleteUndo,undo.leaving == nil else { return }
         undoEnds?.cancel();shelf=undo.before;deleteUndo=nil
-        galleryIndex=min(undo.place,max(0,galleryItems.count-1));gallerySlide?.moving=false;galleryStart=Date()
+        galleryIndex=min(undo.place,max(0,galleryItems.count-1));gallerySlide=GallerySlide(way:-1,kind:.restore);galleryStart=Date()
     }
     var hiddenCount:Int { shelf.hidden.count }
     func bringBack() { shelf.hidden=[];galleryIndex=nil;shift=0;galleryStart=Date();say(L("The System cards are back")) }

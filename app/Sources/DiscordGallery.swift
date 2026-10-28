@@ -12,6 +12,12 @@ struct DiscordGallery: View {
     static let slide=Animation.timingCurve(0.22,1,0.36,1,duration:0.62)
     /// The card in the middle's place: over the caption (and the stage's border, a point at the bottom).
     static let caption:CGFloat=268+1
+    /// How the card in the middle comes in: from a neighbour's place on a step or a delete, back where it was on Undo.
+    static func cardArrival(_ move:DiscordStudio.GallerySlide?)->(start:ArrivalStart,animation:Animation)? {
+        guard let move,move.moving else { return nil }
+        if move.kind == .restore { return (ArrivalStart(opacity:0,scale:0.9),slide) }
+        return (ArrivalStart(x:move.way*277,opacity:0.9,scale:0.6/0.86),slide)
+    }
     var body:some View {
         // Inside the stage's one-point border, as the design's are.
         VStack(spacing:0) {
@@ -65,22 +71,37 @@ private struct GalleryCards: View {
         .transition(.identity)
     }
     /// A neighbour fades in as My cards opens. On a step, the one on the side the cards move to was the card in the
-    /// middle: it shrinks from there to its place; the other comes in from further out, at 0.6, fading in.
-    private func neighbourArrival(leading:Bool)->(start:ArrivalStart,animation:Animation) {
+    /// middle: it shrinks from there to its place; the other comes in from further out, at 0.6, fading in. A delete
+    /// leaves the one before it where it is and brings the next in from further out; Undo leaves the one before too,
+    /// and the card that had taken the middle shrinks back to its side.
+    private func neighbourArrival(leading:Bool)->(start:ArrivalStart,animation:Animation)? {
         guard let slide=studio.gallerySlide,slide.moving else { return (ArrivalStart(opacity:0),Animation.cssEase(0.5).delay(0.1)) }
         let way=slide.way
         let anchor:UnitPoint=leading ? .trailing : .leading
-        if (way > 0) == leading { return (ArrivalStart(x:way*326,scale:1.066/0.74,anchor:anchor),DiscordGallery.slide) }
+        if slide.kind != .step && leading { return nil }
+        if (way > 0) == leading || slide.kind == .restore { return (ArrivalStart(x:way*326,scale:1.066/0.74,anchor:anchor),DiscordGallery.slide) }
         return (ArrivalStart(x:way*150,opacity:0,scale:0.6/0.74,anchor:anchor),DiscordGallery.slide)
     }
+    /// Lighter and a little larger than the design's, with an edge (the player found its dark ones hard to see over the
+    /// cards), and lighter still while pointed at, as the design's are.
     private func arrow(_ icon:String,name:String,enabled:Bool,_ action:@escaping ()->Void)->some View {
-        Button(action:action) {
-            DesignIcon(icon,size:16).foregroundStyle(.white)
-                .frame(width:30,height:30).background(Color(red:17/255,green:18/255,blue:20/255).opacity(0.78),in:Circle())
-                .compositingGroup().shadow(color:.black.opacity(0.35),radius:6,y:4).contentShape(Circle())
-        }
-        .buttonStyle(.plain).opacity(enabled ? 1 : 0).allowsHitTesting(enabled).accessibilityLabel(name)
-        .animation(.easeOut(duration:0.25),value:enabled)
+        Button(action:action) { EmptyView() }
+            .buttonStyle(GalleryArrowStyle(icon:icon)).opacity(enabled ? 1 : 0).allowsHitTesting(enabled).accessibilityLabel(name)
+            .animation(.easeOut(duration:0.25),value:enabled)
+    }
+}
+private struct GalleryArrowStyle: ButtonStyle {
+    let icon:String
+    @State private var inside=false
+    func makeBody(configuration:Configuration)->some View {
+        DesignIcon(icon,size:18).foregroundStyle(.white)
+            .frame(width:34,height:34)
+            .background(inside ? Color(red:82/255,green:85/255,blue:95/255) : Color(red:58/255,green:60/255,blue:67/255).opacity(0.92),in:Circle())
+            .overlay { Circle().strokeBorder(.white.opacity(inside ? 0.24 : 0.16),lineWidth:1) }
+            .compositingGroup().shadow(color:.black.opacity(0.45),radius:8,y:4).contentShape(Circle())
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.easeOut(duration:0.2),value:inside)
+            .onHover { inside=$0 }
     }
 }
 private struct NeighbourStyle: ButtonStyle {
@@ -251,8 +272,9 @@ private struct ActButton: View {
         .designTip(tip).accessibilityLabel(tip)
     }
 }
-/// Delete, just clicked: the bin shakes and goes red, then turns blue into Undo with the seconds left inside its arrow,
-/// and what happened pops up over it in a bubble. Undo puts the card back; when the seconds run out it's a bin again.
+/// Delete, just clicked: the bin shakes and goes red, then turns blue into Undo: a ring running down the seconds left,
+/// its arrow at the running end, the seconds in its middle, and what happened pops up over it in a bubble. Undo puts
+/// the card back. When the seconds run out it spins back faster and faster and goes in a puff, and it's a bin again.
 private struct UndoDeleteButton: View {
     @Bindable var studio:DiscordStudio
     let undo:DiscordStudio.DeleteUndo
@@ -260,28 +282,28 @@ private struct UndoDeleteButton: View {
     @State private var shakes=0
     var body:some View {
         let red=Color(red:1,green:110/255,blue:100/255),blue=Color(red:110/255,green:170/255,blue:1),tint=turned ? blue : red
-        TimelineView(.periodic(from:undo.at,by:1)) { context in
-            let left=max(1,Int(undo.until.timeIntervalSince(context.date).rounded(.up)))
+        TimelineView(.animation(paused:undo.leaving == nil && !turned)) { context in
+            let left=max(0,undo.until.timeIntervalSince(context.date)),window=DiscordStudio.DeleteUndo.window
+            let gone=undo.leaving.map { min(1,max(0,context.date.timeIntervalSince($0)/DiscordStudio.DeleteUndo.spin)) } ?? 0
             Button { studio.undoDelete() } label: {
                 ZStack {
                     DesignIcon("lucide:trash-2",size:14).opacity(turned ? 0 : 1)
-                    ZStack {
-                        DesignIcon("lucide:rotate-ccw",size:22)
-                        Text(verbatim:"\(left)").designFont(9,.heavy).monospacedDigit().offset(y:0.5)
-                    }.opacity(turned ? 1 : 0)
+                    // Run out, the arrow winds back up (a fifth of the spin) so it's seen whirling before the puff.
+                    UndoRing(left:undo.leaving == nil ? left/window : min(0.8,gone*4),seconds:undo.leaving == nil ? max(1,Int(left.rounded(.up))) : 0)
+                        .opacity(turned ? 1 : 0).modifier(SpinAway(gone:gone))
                 }
                 .foregroundStyle(tint)
                 .frame(width:32,height:32)
-                .background(tint.opacity(0.2),in:RoundedRectangle(cornerRadius:9))
+                .background(tint.opacity(0.2*(1-max(0,gone-0.6)/0.4)),in:RoundedRectangle(cornerRadius:9))
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain).accessibilityLabel(L("Undo"))
+            .buttonStyle(.plain).allowsHitTesting(undo.leaving == nil).accessibilityLabel(L("Undo"))
         }
         .keyframeAnimator(initialValue:0.0,trigger:shakes) { view,x in view.offset(x:x) } keyframes:{ _ in
             LinearKeyframe(-3.0,duration:0.06);LinearKeyframe(3.0,duration:0.07);LinearKeyframe(-2.5,duration:0.07)
             LinearKeyframe(2.0,duration:0.07);LinearKeyframe(0.0,duration:0.08)
         }
-        // Its bubble, in the tooltips' style, its foot six points over the button.
+        // Its bubble, in the tooltips' style, its foot six points over the button; it goes as Undo spins away.
         .overlay(alignment:.top) {
             Text(undo.text).designFont(11.5,.medium).foregroundStyle(DiscordColors.ink(0.92)).fixedSize()
                 .padding(.horizontal,9).padding(.vertical,6)
@@ -290,8 +312,61 @@ private struct UndoDeleteButton: View {
                 .compositingGroup().shadow(color:.black.opacity(0.5),radius:14,y:10)
                 .alignmentGuide(.top) { $0[.bottom]+6 }
                 .popIn(0.3).allowsHitTesting(false)
+                .opacity(undo.leaving == nil ? 1 : 0).animation(.easeOut(duration:0.25),value:undo.leaving == nil)
         }
-        .onAppear { shakes+=1;withAnimation(.easeInOut(duration:0.3).delay(0.4)) { turned=true } }
+        // Red, then blue after the shake, by its own animation (not one from onAppear the page would ride: see PartArrival).
+        .animation(.easeInOut(duration:0.3).delay(0.4),value:turned)
+        .onAppear { shakes+=1;turned=true }
+    }
+}
+/// Undo's countdown: a ring running down anticlockwise as the seconds go, with an arrowhead where it ends (the way
+/// Undo turns), and the seconds left in its middle.
+private struct UndoRing: View {
+    /// The share of the seconds left, 1 to 0; and the seconds (none once they've run out).
+    let left:Double
+    let seconds:Int
+    var body:some View {
+        ZStack {
+            Circle().stroke(.white.opacity(0.1),lineWidth:2)
+            Circle().trim(from:0,to:left).stroke(style:StrokeStyle(lineWidth:2,lineCap:.round)).rotationEffect(.degrees(-90))
+            if left > 0.02 {
+                Arrowhead().frame(width:6,height:6).offset(y:-9).rotationEffect(.degrees(360*left))
+            }
+            if seconds > 0 { Text(verbatim:"\(seconds)").designFont(10,.heavy).monospacedDigit() }
+        }
+        .frame(width:18,height:18)
+    }
+}
+/// A small triangle pointing left (anticlockwise, at the top of the ring).
+private struct Arrowhead: Shape {
+    func path(in rect:CGRect)->Path {
+        var path=Path()
+        path.move(to:CGPoint(x:rect.minX,y:rect.midY));path.addLine(to:CGPoint(x:rect.maxX,y:rect.minY));path.addLine(to:CGPoint(x:rect.maxX,y:rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+/// Undo going, `gone` 0 to 1: spinning back, ever faster, and smaller; then gone in a puff (a ring and six specks
+/// flying out) as it fades.
+private struct SpinAway: ViewModifier {
+    let gone:Double
+    func body(content:Content)->some View {
+        let puff=max(0,(gone-0.62)/0.38)
+        content
+            .rotationEffect(.degrees(-1080*gone*gone*gone))
+            .scaleEffect(1-0.5*gone*gone)
+            .opacity(1-puff).blur(radius:3*puff)
+            .overlay {
+                if puff > 0 {
+                    ZStack {
+                        Circle().stroke(.white.opacity(0.55*(1-puff)),lineWidth:1.5).frame(width:10+22*puff,height:10+22*puff)
+                        ForEach(0..<6,id:\.self) { index in
+                            Circle().fill(.white.opacity(0.8*(1-puff))).frame(width:3-1.5*puff,height:3-1.5*puff)
+                                .offset(y:-(6+12*puff)).rotationEffect(.degrees(Double(index)*60+20))
+                        }
+                    }.allowsHitTesting(false)
+                }
+            }
     }
 }
 /// The card's code, to copy and send: everything chosen travels in it, nothing else.
