@@ -4,7 +4,7 @@ import AppKit
 // (MacOSShaders in app/Sources/GraphicsDetails.swift), from the records the pipeline helper keeps
 // (scripts/portable_pipeline.swift). Build with every app source but Main.swift, and run:
 //   mkdir -p runtime/phase-3/macos-shaders-tests
-//   swiftc -O -target arm64-apple-macos26.5 -parse-as-library $(find app/Sources -name "*.swift" ! -name Main.swift) \
+//   swiftc -O -target arm64-apple-macos26.5 -parse-as-library $(ls app/Sources/*.swift | grep -v Main.swift) \
 //     tests/MacOSShadersTests.swift -o runtime/phase-3/macos-shaders-tests/run
 //   runtime/phase-3/macos-shaders-tests/run
 // Main.swift's AppDelegate, for the one menu action the app's views name.
