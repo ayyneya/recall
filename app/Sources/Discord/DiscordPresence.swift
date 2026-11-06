@@ -95,7 +95,7 @@ enum DiscordAssets {
     /// Pictures load from the repository at a fixed tag, so a later rename on main can't break an installed card.
     /// A test build can point `preview` at a branch whose pictures aren't on that tag yet.
     static let tag="discord-art-1"
-    static let official=URL(string:"https://raw.githubusercontent.com/\(Brand.repositoryPath)/\(tag)/app/Resources/")!
+    static let official=URL(string:"https://raw.githubusercontent.com/\(Brand.forkPath)/\(tag)/app/Resources/")!
     static let preview:URL?=nil
     static var base:URL { preview ?? official }
     /// The feature's own pictures, in app/Resources/Discord.

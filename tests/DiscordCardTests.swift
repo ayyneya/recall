@@ -499,7 +499,7 @@ import Foundation
         for file in [DiscordAssets.macBadgeFile]+CardArt.allCases.map(\.file) {
             precondition(FileManager.default.fileExists(atPath:"app/Resources/Discord/"+file) && DiscordAssets.art(file).path.hasSuffix("/app/Resources/Discord/"+file),file)
         }
-        precondition(DiscordAssets.official.absoluteString.contains("/\(Brand.repositoryPath)/\(DiscordAssets.tag)/") && DiscordAssets.tag == "discord-art-1")
+        precondition(DiscordAssets.official.absoluteString.contains("/\(Brand.forkPath)/\(DiscordAssets.tag)/") && DiscordAssets.tag == "discord-art-1")
     }
 
     /// Line 1's phrase, Recall's words with one blank from a list. Auto fills it from the player's data (the next
