@@ -71,6 +71,9 @@ jobs:
         id: merge
         run: |
           cp .github/fork-release-claude.md "$RUNNER_TEMP/instructions.md"
+          # Claude's one way to run anything: the check, from outside the checkout, without its token.
+          printf '#!/bin/bash\ncd "%s"\nexec env -u CLAUDE_CODE_OAUTH_TOKEN bash scripts/fork_check.sh\n' "$PWD" > /tmp/fork-check
+          chmod +x /tmp/fork-check
           git config user.name neya
           git config user.email 54977492+ayyneya@users.noreply.github.com
           git fetch --no-tags "https://github.com/$UPSTREAM.git" "refs/tags/$TAG:refs/upstream/$TAG"
@@ -88,8 +91,8 @@ jobs:
         run: |
           npm install -g @anthropic-ai/claude-code
           claude -p "$(cat "$RUNNER_TEMP/instructions.md")" \
-            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(bash scripts/fork_check.sh),Bash(swiftc:*),Bash(python3:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git grep:*),Bash(git rm:*),Bash(ls:*),Bash(grep:*),Bash(tail:*),Bash(head:*)" \
-            --disallowedTools "Bash(git push:*),Bash(git commit:*),Bash(curl:*),Bash(wget:*),WebFetch,WebSearch"
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(/tmp/fork-check),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git grep:*),Bash(git rm:*)" \
+            --disallowedTools "Edit(.github/**),Write(.github/**),Edit(scripts/fork_*),Write(scripts/fork_*),WebFetch,WebSearch"
       - name: Commit any fixes
         run: |
           rm -f fork-check.log
@@ -108,7 +111,7 @@ jobs:
           FIX: ${{ inputs.fix }}
         run: |
           version=${TAG#v}-discord${FIX:+.$FIX}
-          python3 scripts/fork_release.py build --tag "$TAG" --version "$version" --output "$RUNNER_TEMP/out"
+          python3 scripts/fork_release.py --tag "$TAG" --version "$version" --output "$RUNNER_TEMP/out"
           git bundle create "$RUNNER_TEMP/out/merged.bundle" HEAD
           tar -cf "$RUNNER_TEMP/build.tar" -C "$RUNNER_TEMP/out" RecallDiscord.app app.entitlements merged.bundle
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -118,7 +121,8 @@ jobs:
           path: ${{ runner.temp }}/build.tar
           retention-days: 1
           compression-level: 0
-  # Holds the certificate and can publish, so it runs nothing from the merge: only discord-full as it was before it.
+  # Holds the certificate and can publish, so it runs no script from the repository, merged or not: everything it
+  # does is written here, in a file the job's own token can't change.
   publish:
     needs: [check, build]
     runs-on: macos-26
@@ -137,13 +141,22 @@ jobs:
         with:
           name: build
           path: ${{ runner.temp }}
+      - name: Refuse a merge that changes the release itself
+        run: |
+          mkdir "$RUNNER_TEMP/out"
+          tar -xf "$RUNNER_TEMP/build.tar" -C "$RUNNER_TEMP/out"
+          git fetch "$RUNNER_TEMP/out/merged.bundle" HEAD:refs/heads/merged
+          git merge-base --is-ancestor origin/discord-full merged
+          changed=$(git diff --name-only origin/discord-full merged -- .github/workflows .github/fork-release-claude.md scripts/fork_check.sh scripts/fork_release.py scripts/fork_certificate.sh)
+          if [ -n "$changed" ]; then echo "The merge changed: $changed"; exit 1; fi
       - name: Sign and package
         env:
           P12: ${{ secrets.FORK_CERT_P12 }}
           PASSWORD: ${{ secrets.FORK_CERT_PASSWORD }}
         run: |
-          mkdir "$RUNNER_TEMP/out"
-          tar -xf "$RUNNER_TEMP/build.tar" -C "$RUNNER_TEMP/out"
+          out=$RUNNER_TEMP/out
+          app=$out/RecallDiscord.app
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$VERSION" ]
           keychain=$RUNNER_TEMP/fork.keychain-db
           lock=$(openssl rand -hex 16)
           security create-keychain -p "$lock" "$keychain"
@@ -154,15 +167,23 @@ jobs:
           rm "$RUNNER_TEMP/certificate.p12"
           security set-key-partition-list -S apple-tool:,apple: -s -k "$lock" "$keychain" > /dev/null
           identity=$(security find-identity -p codesigning "$keychain" | awk '/RecallDiscord/ {print $2; exit}')
-          python3 scripts/fork_release.py package --folder "$RUNNER_TEMP/out" --version "$VERSION" --identity "$identity" --keychain "$keychain"
+          sign=(codesign --force --timestamp=none --keychain "$keychain" --sign "$identity")
+          for item in ow2-setup ow2-pipeline libpipeline_prepare.dylib pipeline-prepare pipeline-warm "Rosetta Check.app"; do "${sign[@]}" "$app/Contents/Helpers/$item"; done
+          "${sign[@]}" --entitlements "$out/app.entitlements" "$app"
+          codesign --verify --deep --strict "$app"
           security delete-keychain "$keychain"
+          mkdir "$RUNNER_TEMP/stage"
+          ditto "$app" "$RUNNER_TEMP/stage/RecallDiscord.app"
+          ln -s /Applications "$RUNNER_TEMP/stage/Applications"
+          image=RecallDiscord-$VERSION.dmg
+          hdiutil create -quiet -volname RecallDiscord -fs HFS+ -format UDZO -srcfolder "$RUNNER_TEMP/stage" "$out/$image"
+          (cd "$out" && shasum -a 256 "$image" > "$image.sha256")
       - name: Publish
         if: env.PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           out=$RUNNER_TEMP/out
-          git fetch "$out/merged.bundle" HEAD:refs/heads/merged
           git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" merged:discord-full
           { echo "Recall ${TAG#v} with the full Discord card. Unsigned: the first time, open it from System Settings › Privacy & Security › Open Anyway."; echo; gh release view "$TAG" --repo "$UPSTREAM" --json body --jq .body; } > "$RUNNER_TEMP/notes.md"
           gh release create "v$VERSION" "$out/RecallDiscord-$VERSION.dmg" "$out/RecallDiscord-$VERSION.dmg.sha256" --repo "$GITHUB_REPOSITORY" --target "$(git rev-parse merged)" --title "RecallDiscord $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --latest

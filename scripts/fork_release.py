@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
-"""RecallDiscord for a release on the fork, in two steps that run on separate machines.
-
-build: the engine from Recall's official release of the same version and the app from this checkout, unsigned.
-package: signs a finished app with the fork's certificate and makes the DMG. It runs no code from the merge, which
-is why it reads the entitlements build wrote instead of importing them.
+"""Build RecallDiscord, unsigned, for a release on the fork: the engine from Recall's official release of the same
+version and the app from this checkout. The workflow signs and packages it on another machine.
 """
 import argparse
 import hashlib
-import os
 import plistlib
 import shutil
 import subprocess
@@ -72,41 +68,13 @@ def build(args):
     (args.output/'app.entitlements').write_bytes(plistlib.dumps(ENTITLEMENTS))
 
 
-def package(args):
-    app = args.folder/f'{NAME}.app'
-    if plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleShortVersionString'] != args.version:
-        raise SystemExit(f'{app} is not version {args.version}')
-    base = ['codesign', '--force', '--timestamp=none', '--sign', args.identity]+(['--keychain', args.keychain] if args.keychain else [])
-    for item in ('ow2-setup', 'ow2-pipeline', 'libpipeline_prepare.dylib', 'pipeline-prepare', 'pipeline-warm', 'Rosetta Check.app'):
-        run(*base, app/'Contents/Helpers'/item)
-    run(*base, '--entitlements', args.folder/'app.entitlements', app)
-    run('codesign', '--verify', '--deep', '--strict', app)
-    with tempfile.TemporaryDirectory() as folder:
-        stage = Path(folder)/'stage'
-        stage.mkdir()
-        run('ditto', app, stage/app.name)
-        os.symlink('/Applications', stage/'Applications')
-        image = args.folder/f'{NAME}-{args.version}.dmg'
-        run('hdiutil', 'create', '-quiet', '-volname', NAME, '-fs', 'HFS+', '-format', 'UDZO', '-srcfolder', stage, image)
-    image.with_name(image.name+'.sha256').write_text(f'{sha256(image)}  {image.name}\n')
-    print(image)
-
-
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    steps = parser.add_subparsers(dest='step', required=True)
-    first = steps.add_parser('build')
-    first.add_argument('--tag', required=True, help="Recall's release, such as v1.6.3")
-    first.add_argument('--version', required=True, help='such as 1.6.3-discord')
-    first.add_argument('--runtime-archive', type=Path, help='use this engine instead of fetching it')
-    first.add_argument('--output', type=Path, default=ROOT/'runtime/build/fork')
-    second = steps.add_parser('package')
-    second.add_argument('--folder', type=Path, required=True, help="build's output")
-    second.add_argument('--version', required=True)
-    second.add_argument('--identity', default='-', help="the certificate's SHA-1; - signs ad hoc, for a local try")
-    second.add_argument('--keychain')
-    args = parser.parse_args()
-    (build if args.step == 'build' else package)(args)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--tag', required=True, help="Recall's release, such as v1.6.3")
+    parser.add_argument('--version', required=True, help='such as 1.6.3-discord')
+    parser.add_argument('--runtime-archive', type=Path, help='use this engine instead of fetching it')
+    parser.add_argument('--output', type=Path, default=ROOT/'runtime/build/fork')
+    build(parser.parse_args())
 
 
 if __name__ == '__main__':
