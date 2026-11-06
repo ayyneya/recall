@@ -78,6 +78,7 @@ jobs:
           git config user.name neya
           git config user.email 54977492+ayyneya@users.noreply.github.com
           git fetch --no-tags "https://github.com/$UPSTREAM.git" "refs/tags/$TAG:refs/upstream/$TAG"
+          git diff "$(git merge-base HEAD "refs/upstream/$TAG")" "refs/upstream/$TAG" > fork-upstream.diff
           git merge --no-edit -m "Merge Recall $TAG" "refs/upstream/$TAG" && echo "clean=true" >> "$GITHUB_OUTPUT" || echo "clean=false" >> "$GITHUB_OUTPUT"
       - name: Check the merge
         id: first
@@ -92,11 +93,11 @@ jobs:
         run: |
           npm install -g @anthropic-ai/claude-code
           claude -p "$(cat "$RUNNER_TEMP/instructions.md")" \
-            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(/usr/local/bin/fork-check),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git grep:*),Bash(git rm:*)" \
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(/usr/local/bin/fork-check),Bash(git status),Bash(git diff),Bash(git rm:*)" \
             --disallowedTools "Edit(.git/**),Edit(.github/**),Edit(scripts/fork_*),WebFetch,WebSearch"
       - name: Commit any fixes
         run: |
-          rm -f fork-check.log
+          rm -f fork-check.log fork-upstream.diff
           if git grep -n -E '^(<<<<<<<|>>>>>>>) ' -- app scripts tests docs; then exit 1; fi
           git add -A
           if [ -f "$(git rev-parse --git-path MERGE_HEAD)" ]; then git commit --no-edit
