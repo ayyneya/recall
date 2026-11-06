@@ -71,9 +71,10 @@ jobs:
         id: merge
         run: |
           cp .github/fork-release-claude.md "$RUNNER_TEMP/instructions.md"
-          # Claude's one way to run anything: the check, from outside the checkout, without its token.
-          printf '#!/bin/bash\ncd "%s"\nexec env -u CLAUDE_CODE_OAUTH_TOKEN bash scripts/fork_check.sh\n' "$PWD" > /tmp/fork-check
-          chmod +x /tmp/fork-check
+          # Claude's one way to run anything: the check, without its token, from a file it can't change.
+          printf '#!/bin/bash\ncd "%s"\nexec env -u CLAUDE_CODE_OAUTH_TOKEN bash scripts/fork_check.sh\n' "$PWD" > "$RUNNER_TEMP/fork-check"
+          sudo install -d /usr/local/bin
+          sudo install -o root -g wheel -m 0555 "$RUNNER_TEMP/fork-check" /usr/local/bin/fork-check
           git config user.name neya
           git config user.email 54977492+ayyneya@users.noreply.github.com
           git fetch --no-tags "https://github.com/$UPSTREAM.git" "refs/tags/$TAG:refs/upstream/$TAG"
@@ -91,8 +92,8 @@ jobs:
         run: |
           npm install -g @anthropic-ai/claude-code
           claude -p "$(cat "$RUNNER_TEMP/instructions.md")" \
-            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(/tmp/fork-check),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git grep:*),Bash(git rm:*)" \
-            --disallowedTools "Edit(.github/**),Write(.github/**),Edit(scripts/fork_*),Write(scripts/fork_*),WebFetch,WebSearch"
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(/usr/local/bin/fork-check),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git grep:*),Bash(git rm:*)" \
+            --disallowedTools "Edit(.git/**),Edit(.github/**),Edit(scripts/fork_*),WebFetch,WebSearch"
       - name: Commit any fixes
         run: |
           rm -f fork-check.log
