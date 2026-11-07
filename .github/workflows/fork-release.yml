@@ -10,13 +10,9 @@ on:
         type: boolean
         default: false
       force:
-        description: Run even if this Recall release is already out
+        description: Release even with no new Recall version (the next number, like 1.6.3-discord.2)
         type: boolean
         default: false
-      fix:
-        description: Fix number for a rebuild of the same Recall release (2 makes 1.6.3-discord.2)
-        type: string
-        default: ''
 concurrency:
   group: fork-release
 permissions:
@@ -30,6 +26,7 @@ jobs:
     outputs:
       tag: ${{ steps.look.outputs.tag }}
       run: ${{ steps.look.outputs.run }}
+      fix: ${{ steps.look.outputs.fix }}
     steps:
       - id: look
         env:
@@ -46,6 +43,10 @@ jobs:
           # A failed release waits for its issue to be closed, so it can't spend Claude's usage every hour.
           stuck=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"Release failed: $tag\" in:title" --json number --jq length)
           if [ "$FORCE" = true ] || { [ -z "$out" ] && [ "$stuck" = 0 ]; }; then echo "run=true" >> "$GITHUB_OUTPUT"; fi
+          if [ -n "$out" ]; then
+            last=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' | sed -n "s/^$tag-discord\.\([0-9]*\)$/\1/p" | sort -n | tail -1)
+            echo "fix=$((${last:-1}+1))" >> "$GITHUB_OUTPUT"
+          fi
   # Holds no certificate and can't write to the repository: everything from the merge runs here.
   build:
     needs: check
@@ -113,7 +114,7 @@ jobs:
         id: app
         env:
           GH_TOKEN: ${{ github.token }}
-          FIX: ${{ inputs.fix }}
+          FIX: ${{ needs.check.outputs.fix }}
         run: |
           version=${TAG#v}-discord${FIX:+.$FIX}
           python3 scripts/fork_release.py --tag "$TAG" --version "$version" --output "$RUNNER_TEMP/out"
@@ -192,7 +193,37 @@ jobs:
         run: |
           out=$RUNNER_TEMP/out
           git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" merged:discord-full
-          { echo "Recall ${TAG#v} with the full Discord card. Unsigned: the first time, open it from System Settings › Privacy & Security › Open Anyway."; echo; gh release view "$TAG" --repo "$UPSTREAM" --json body --jq .body; } > "$RUNNER_TEMP/notes.md"
+          gh release view "$TAG" --repo "$UPSTREAM" --json body --jq .body > "$RUNNER_TEMP/recall.md"
+          last=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          {
+            [ "${last%%-discord*}" = "$TAG" ] || echo "- Updated to Recall ${TAG#v}"
+            git log --first-parent --no-merges --format='- %s' "$last..merged" -- app | grep -v '^- Fixes for Recall' || true
+          } > "$RUNNER_TEMP/changes.md"
+          [ -s "$RUNNER_TEMP/changes.md" ] || echo "- Small fixes" > "$RUNNER_TEMP/changes.md"
+          # The app shows the bullets under the first "What's new". Recall's notes stay whole except its own download's
+          # checksum, and names lose their @ so this release doesn't mention those people.
+          python3 - <<'NOTES'
+          import os,re
+          temp=os.environ["RUNNER_TEMP"];version=os.environ["TAG"][1:]
+          bare=lambda text:re.sub(r"(?<![\w`/.-])@(?=[A-Za-z0-9])","",text)
+          recall=re.sub(r"<details>\s*<summary>\s*Verify.*?</details>\s*","",open(f"{temp}/recall.md").read(),flags=re.S|re.I)
+          changes=open(f"{temp}/changes.md").read().strip()
+          open(f"{temp}/notes.md","w").write(f"""Recall {version} with the full Discord card. Unsigned: the first time, open it from System Settings › Privacy & Security › Open Anyway.
+
+          ## What's new
+
+          {bare(changes)}
+
+          ## From Recall {version}
+
+          <details>
+          <summary>Recall's release notes</summary>
+
+          {bare(recall).strip()}
+
+          </details>
+          """)
+          NOTES
           gh release create "v$VERSION" "$out/RecallDiscord-$VERSION.dmg" "$out/RecallDiscord-$VERSION.dmg.sha256" --repo "$GITHUB_REPOSITORY" --target "$(git rev-parse merged)" --title "RecallDiscord $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --latest
   report:
     needs: [check, build, publish]
